@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  # O serviço da base de dados
+  db:
+    image: postgres:15
+    container_name: taskify_db
+    restart: always
+    ports:
+      # Mapeia a porta 5432 do container para a 5432 do computador deles
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: taskify
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      # Garante que os dados não se perdem se desligarem o container
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
