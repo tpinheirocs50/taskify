@@ -9,12 +9,12 @@ return new class extends Migration {
     {
         Schema::table('clientes', function (Blueprint $table) {
             $table->string('name', 100)->notNullable()->after('id');
-            $table->string('tin', 20)->notNullable()->unique()->after('name');
+            $table->string('tin', 20)->notNullable()->unique();
             $table->text('address')->notnullable()->after('tin');
-            $table->string('email', 50)->notNullable()->unique()->after('address');
-            $table->string('company', 50)->after('email');
-            $table->string('phone', 20)->nullable()->after('company');
-            $table->boolean('isActive')->default(true)->after('phone');
+            $table->string('email', 50)->notNullable()->unique();
+            $table->string('company', 50);
+            $table->string('phone', 20)->nullable();
+            $table->boolean('isActive')->default(true);
             $table->timestamps();
 
         });
