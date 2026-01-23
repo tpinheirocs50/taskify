@@ -13,6 +13,27 @@ return new class extends Migration
     {
         Schema::create('tasks', function (Blueprint $table) {
             $table->id();
+            $table->string('title');
+            $table->text('description');
+            $table->enum('priority', ['low', 'medium', 'high'])->default('medium');
+            $table->date('starting_date');
+            $table->date('due_date');
+            $table->enum('status', ['pending', 'in_progress', 'completed'])->default('pending');
+            $table->decimal('amount', 10, 2)->nullable();
+
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->onDelete('cascade');
+
+            $table->foreignId('client_id')
+                  ->constrained('clients')
+                  ->onDelete('cascade');  
+                  
+            $table->foreignId('invoice_id')
+                  ->nullable()
+                  ->constrained('invoices')
+                  ->onDelete('set null');
+                        
             $table->timestamps();
         });
     }
@@ -22,6 +43,28 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('tasks');
+        Schema::table('tasks', function (Blueprint $table) {
+            $table->dropForeign([
+                'user_id',
+                'client_id',
+                'invoice_id'
+            ]);
+
+            $table->dropColumn([
+                'id',
+                'title',
+                'description',
+                'priority',
+                'starting_date',
+                'due_date',
+                'status',
+                'amount',
+                'user_id',
+                'client_id',
+                'invoice_id'
+            ]);
+
+        });
+ 
     }
 };
