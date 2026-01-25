@@ -91,6 +91,61 @@ export default function Profile({
                                     />
                                 </div>
 
+                                <div className="grid gap-2">
+                                    <Label htmlFor="tin">Tax ID (TIN)</Label>
+
+                                    <Input
+                                        id="tin"
+                                        className="mt-1 block w-full"
+                                        defaultValue={auth.user.tin || ''}
+                                        name="tin"
+                                        autoComplete="off"
+                                        placeholder="Tax identification number"
+                                    />
+
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.tin}
+                                    />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="address">Address</Label>
+
+                                    <Input
+                                        id="address"
+                                        className="mt-1 block w-full"
+                                        defaultValue={auth.user.address || ''}
+                                        name="address"
+                                        autoComplete="street-address"
+                                        placeholder="Street address"
+                                    />
+
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.address}
+                                    />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="phone">Phone</Label>
+
+                                    <Input
+                                        id="phone"
+                                        type="tel"
+                                        className="mt-1 block w-full"
+                                        defaultValue={auth.user.phone || ''}
+                                        name="phone"
+                                        autoComplete="tel"
+                                        placeholder="Phone number"
+                                    />
+
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.phone}
+                                    />
+                                </div>
+
                                 {mustVerifyEmail &&
                                     auth.user.email_verified_at === null && (
                                         <div>
