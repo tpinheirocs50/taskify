@@ -11,7 +11,7 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-Route::apiResource('user', UserController::class);
-Route::apiResource('client', ClientController::class);
-Route::apiResource('task', TaskController::class);
-Route::apiResource('invoice', InvoiceController::class);
+Route::apiResource('users', UserController::class);
+Route::apiResource('clients', ClientController::class);
+Route::apiResource('tasks', TaskController::class);
+Route::apiResource('invoices', InvoiceController::class);
