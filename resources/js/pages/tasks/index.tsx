@@ -1,6 +1,24 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Send, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { MessageSquare, Send, AlertCircle, CheckCircle2, Clock, Plus } from 'lucide-react';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { tasks } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -51,6 +69,16 @@ interface PaginationData {
 export default function Tasks() {
     const [tasks_list, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [newTaskForm, setNewTaskForm] = useState({
+        title: '',
+        description: '',
+        priority: 'medium' as 'low' | 'medium' | 'high',
+        due_date: '',
+        client_id: '',
+        user_id: '',
+        amount: '',
+    });
     const [pagination, setPagination] = useState<PaginationData>({
         total: 0,
         per_page: 15,
@@ -142,6 +170,33 @@ export default function Tasks() {
         setNewComment({ ...newComment, [taskId]: '' });
     };
 
+    const handleCreateTask = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const response = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTaskForm),
+            });
+
+            if (response.ok) {
+                setNewTaskForm({
+                    title: '',
+                    description: '',
+                    priority: 'medium',
+                    due_date: '',
+                    client_id: '',
+                    user_id: '',
+                    amount: '',
+                });
+                setIsCreateDialogOpen(false);
+                fetchTasks();
+            }
+        } catch (error) {
+            console.error('Error creating task:', error);
+        }
+    };
+
     const formatDate = (date: string) => {
         return new Date(date).toLocaleDateString('pt-PT');
     };
@@ -151,13 +206,119 @@ export default function Tasks() {
             <Head title="Tasks" />
             <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-6">
                 {/* Header Section */}
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white mb-2">
-                        Tasks
-                    </h1>
-                    <p className="text-gray-600 dark:text-gray-400">
-                        Track project progress and collaborate with your team
-                    </p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white mb-2">
+                            Tasks
+                        </h1>
+                        <p className="text-gray-600 dark:text-gray-400">
+                            Track project progress and collaborate with your team
+                        </p>
+                    </div>
+                    <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="gap-2">
+                                <Plus size={16} />
+                                Create Task
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Create New Task</DialogTitle>
+                                <DialogDescription>
+                                    Fill in the details to create a new task
+                                </DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleCreateTask} className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium">Title *</label>
+                                    <Input
+                                        required
+                                        placeholder="Task title"
+                                        value={newTaskForm.title}
+                                        onChange={(e) =>
+                                            setNewTaskForm({
+                                                ...newTaskForm,
+                                                title: e.target.value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Description</label>
+                                    <Input
+                                        placeholder="Task description"
+                                        value={newTaskForm.description}
+                                        onChange={(e) =>
+                                            setNewTaskForm({
+                                                ...newTaskForm,
+                                                description: e.target.value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Priority</label>
+                                    <Select
+                                        value={newTaskForm.priority}
+                                        onValueChange={(value) =>
+                                            setNewTaskForm({
+                                                ...newTaskForm,
+                                                priority: value as 'low' | 'medium' | 'high',
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="low">Low</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="high">High</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Due Date</label>
+                                    <Input
+                                        type="date"
+                                        value={newTaskForm.due_date}
+                                        onChange={(e) =>
+                                            setNewTaskForm({
+                                                ...newTaskForm,
+                                                due_date: e.target.value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Amount</label>
+                                    <Input
+                                        type="number"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        value={newTaskForm.amount}
+                                        onChange={(e) =>
+                                            setNewTaskForm({
+                                                ...newTaskForm,
+                                                amount: e.target.value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                                <div className="flex gap-2 justify-end pt-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setIsCreateDialogOpen(false)}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button type="submit">Create</Button>
+                                </div>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 {/* Tasks List */}
@@ -370,28 +531,7 @@ export default function Tasks() {
                 )}
 
                 {/* Help Box */}
-                {!loading && tasks_list.length > 0 && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.4 }}
-                        className="rounded-2xl border border-blue-200 bg-blue-50 p-6 dark:border-blue-900 dark:bg-blue-950/30"
-                    >
-                        <div className="flex items-start gap-4">
-                            <AlertCircle className="mt-1 h-6 w-6 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                            <div>
-                                <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-                                    How to Use Task Comments
-                                </h3>
-                                <p className="text-sm text-gray-700 dark:text-gray-300">
-                                    Use the comment section to provide feedback, ask questions, or
-                                    share observations about each task. Your team members will be
-                                    notified of your comments and can respond directly.
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
+
 
                 {/* Pagination Info */}
                 {!loading && tasks_list.length > 0 && (
