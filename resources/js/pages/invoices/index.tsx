@@ -21,6 +21,18 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { invoices } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -46,8 +58,19 @@ interface Invoice {
 
 interface Task {
     id: number;
+    title: string;
+    description?: string;
+    priority: 'low' | 'medium' | 'high';
+    starting_date: string;
+    due_date: string;
+    status: string;
+    amount: number;
     invoice_id: number | null;
     user_id: number;
+    client_id: number | null;
+    user_name?: string;
+    client_name?: string;
+    client_company?: string;
 }
 
 interface InvoiceStats {
@@ -80,12 +103,47 @@ export default function Invoices() {
         current_page: 1,
         last_page: 1,
     });
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
+    const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([]);
+    const [isCreating, setIsCreating] = useState(false);
 
     useEffect(() => {
         if (currentUserId) {
             fetchInvoices();
         }
     }, [currentUserId]);
+
+    const fetchAvailableTasks = async () => {
+        try {
+            // Fetch all tasks without invoice_id for current user
+            let allTasks: Task[] = [];
+            let currentPage = 1;
+            let lastPage = 1;
+
+            do {
+                const response = await fetch(`/api/tasks?page=${currentPage}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    allTasks = [...allTasks, ...data.data];
+                    lastPage = data.pagination.last_page;
+                    currentPage++;
+                } else {
+                    break;
+                }
+            } while (currentPage <= lastPage);
+
+            // Filter tasks: current user's tasks without invoice
+            const userAvailableTasks = allTasks.filter(
+                (task) => task.user_id === currentUserId && task.invoice_id === null
+            );
+
+            setAvailableTasks(userAvailableTasks);
+        } catch (error) {
+            console.error('Error fetching available tasks:', error);
+        }
+    };
 
     const fetchInvoices = async () => {
         try {
@@ -161,6 +219,57 @@ export default function Invoices() {
         }
     };
 
+    const handleCreateInvoice = async () => {
+        if (selectedTaskIds.length === 0) {
+            alert('Please select at least one task');
+            return;
+        }
+
+        setIsCreating(true);
+        try {
+            const response = await fetch('/api/invoices', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document
+                        .querySelector('meta[name="csrf-token"]')
+                        ?.getAttribute('content') || '',
+                },
+                body: JSON.stringify({
+                    task_ids: selectedTaskIds,
+                    date: new Date().toISOString().split('T')[0],
+                    status: 'draft',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Reset dialog state
+                setSelectedTaskIds([]);
+                setIsCreateDialogOpen(false);
+                // Refresh data
+                await fetchInvoices();
+                await fetchAvailableTasks();
+            } else {
+                alert(data.message || 'Failed to create invoice');
+            }
+        } catch (error) {
+            console.error('Error creating invoice:', error);
+            alert('Failed to create invoice');
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const toggleTaskSelection = (taskId: number) => {
+        setSelectedTaskIds((prev) =>
+            prev.includes(taskId)
+                ? prev.filter((id) => id !== taskId)
+                : [...prev, taskId]
+        );
+    };
+
     const getStatusBadge = (status: string) => {
         switch (status) {
             case 'paid':
@@ -231,6 +340,93 @@ export default function Invoices() {
                             Manage and track all your invoices
                         </p>
                     </div>
+                    <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+                        setIsCreateDialogOpen(open);
+                        if (open) {
+                            fetchAvailableTasks();
+                            setSelectedTaskIds([]);
+                        }
+                    }}>
+                        <DialogTrigger asChild>
+                            <Button>
+                                Create Invoice
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle>Create New Invoice</DialogTitle>
+                                <DialogDescription>
+                                    Select tasks to include in this invoice. Only tasks without an existing invoice are shown.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4">
+                                {availableTasks.length === 0 ? (
+                                    <div className="text-center py-8 text-muted-foreground">
+                                        No available tasks. All your tasks are already assigned to invoices.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="text-sm font-medium">
+                                            Select Tasks ({selectedTaskIds.length} selected)
+                                        </div>
+                                        <div className="space-y-2 border rounded-lg p-4 max-h-96 overflow-y-auto">
+                                            {availableTasks.map((task) => (
+                                                <div
+                                                    key={task.id}
+                                                    className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                                                >
+                                                    <Checkbox
+                                                        id={`task-${task.id}`}
+                                                        checked={selectedTaskIds.includes(task.id)}
+                                                        onCheckedChange={() => toggleTaskSelection(task.id)}
+                                                    />
+                                                    <Label
+                                                        htmlFor={`task-${task.id}`}
+                                                        className="flex-1 cursor-pointer space-y-1"
+                                                    >
+                                                        <div className="font-medium">{task.title}</div>
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {task.client_company && (
+                                                                <span>{task.client_company} • </span>
+                                                            )}
+                                                            <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
+                                                            {task.amount && (
+                                                                <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                            )}
+                                                        </div>
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {selectedTaskIds.length > 0 && (
+                                            <div className="text-sm text-muted-foreground">
+                                                Total amount: $
+                                                {availableTasks
+                                                    .filter((task) => selectedTaskIds.includes(task.id))
+                                                    .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
+                                                    .toFixed(2)}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <DialogFooter>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setIsCreateDialogOpen(false)}
+                                    disabled={isCreating}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleCreateInvoice}
+                                    disabled={isCreating || selectedTaskIds.length === 0}
+                                >
+                                    {isCreating ? 'Creating...' : 'Create Invoice'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 {/* Invoice Stats */}

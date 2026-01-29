@@ -45,9 +45,35 @@ class InvoiceController extends Controller
             $validated = $request->validate([
                 'date' => 'required|date',
                 'status' => 'required|in:draft,sent,paid,overdue,cancelled',
+                'task_ids' => 'required|array|min:1',
+                'task_ids.*' => 'required|integer|exists:tasks,id',
             ]);
 
-            $invoice = Invoice::create($validated);
+            // Create the invoice
+            $invoice = Invoice::create([
+                'date' => $validated['date'],
+                'status' => $validated['status'],
+            ]);
+
+            // Associate tasks with the invoice
+            // Verify that tasks don't already have an invoice
+            $tasks = \App\Models\Task::whereIn('id', $validated['task_ids'])
+                ->whereNull('invoice_id')
+                ->get();
+
+            if ($tasks->count() !== count($validated['task_ids'])) {
+                $invoice->delete();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some tasks are already assigned to an invoice',
+                ], 400);
+            }
+
+            // Update tasks with invoice_id
+            foreach ($tasks as $task) {
+                $task->invoice_id = $invoice->id;
+                $task->save();
+            }
 
             return response()->json([
                 'success' => true,
