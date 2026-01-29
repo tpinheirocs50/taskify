@@ -13,6 +13,14 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { invoices } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -52,6 +60,14 @@ export default function Invoices() {
     const { auth } = usePage().props as any;
     const currentUserId = auth?.user?.id;
     const [invoices_list, setInvoices] = useState<Invoice[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | Invoice['status']>(
+        'all',
+    );
+    const [sortField, setSortField] = useState<
+        'id' | 'date' | 'status' | 'created_at'
+    >('date');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [invoiceStats, setInvoiceStats] = useState<InvoiceStats>({
         sent: 0,
         paid: 0,
@@ -162,6 +178,42 @@ export default function Invoices() {
         }
     };
 
+    const filteredInvoices = invoices_list.filter((invoice) => {
+        const matchesStatus =
+            statusFilter === 'all' || invoice.status === statusFilter;
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) {
+            return matchesStatus;
+        }
+        const matchesQuery =
+            invoice.id.toString().includes(query) ||
+            invoice.status.toLowerCase().includes(query);
+        return matchesStatus && matchesQuery;
+    });
+
+    const sortedInvoices = [...filteredInvoices].sort((a, b) => {
+        const direction = sortDirection === 'asc' ? 1 : -1;
+        switch (sortField) {
+            case 'id':
+                return (a.id - b.id) * direction;
+            case 'status':
+                return a.status.localeCompare(b.status) * direction;
+            case 'created_at':
+                return (
+                    (new Date(a.created_at).getTime() -
+                        new Date(b.created_at).getTime()) *
+                    direction
+                );
+            case 'date':
+            default:
+                return (
+                    (new Date(a.date).getTime() -
+                        new Date(b.date).getTime()) *
+                    direction
+                );
+        }
+    });
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Invoices" />
@@ -223,12 +275,77 @@ export default function Invoices() {
 
                 {/* Invoices Table */}
                 <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
+                    <CardHeader className="flex flex-col gap-4">
                         <div>
                             <CardTitle>All Invoices</CardTitle>
                             <CardDescription>
                                 A list of all invoices in your system
                             </CardDescription>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-4">
+                            <Input
+                                placeholder="Search by ID or status"
+                                value={searchQuery}
+                                onChange={(event) =>
+                                    setSearchQuery(event.target.value)
+                                }
+                            />
+                            <Select
+                                value={statusFilter}
+                                onValueChange={(value) =>
+                                    setStatusFilter(
+                                        value as 'all' | Invoice['status'],
+                                    )
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Filter by status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All statuses</SelectItem>
+                                    <SelectItem value="draft">Draft</SelectItem>
+                                    <SelectItem value="sent">Sent</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                    <SelectItem value="overdue">Overdue</SelectItem>
+                                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                value={sortField}
+                                onValueChange={(value) =>
+                                    setSortField(
+                                        value as
+                                        | 'id'
+                                        | 'date'
+                                        | 'status'
+                                        | 'created_at',
+                                    )
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Sort by" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="date">Invoice date</SelectItem>
+                                    <SelectItem value="created_at">Created date</SelectItem>
+                                    <SelectItem value="status">Status</SelectItem>
+                                    <SelectItem value="id">Invoice ID</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                value={sortDirection}
+                                onValueChange={(value) =>
+                                    setSortDirection(value as 'asc' | 'desc')
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Direction" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="desc">Descending</SelectItem>
+                                    <SelectItem value="asc">Ascending</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -238,7 +355,7 @@ export default function Invoices() {
                                     Loading invoices...
                                 </div>
                             </div>
-                        ) : invoices_list.length === 0 ? (
+                        ) : sortedInvoices.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-12">
                                 <FileText className="text-muted-foreground mb-4 h-12 w-12" />
                                 <div className="text-muted-foreground text-center">
@@ -262,7 +379,7 @@ export default function Invoices() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {invoices_list.map((invoice) => (
+                                    {sortedInvoices.map((invoice) => (
                                         <TableRow key={invoice.id}>
                                             <TableCell className="font-medium">
                                                 #{invoice.id}
@@ -307,12 +424,8 @@ export default function Invoices() {
                 {!loading && invoices_list.length > 0 && (
                     <div className="text-muted-foreground flex items-center justify-between text-sm">
                         <span>
-                            Showing {(pagination.current_page - 1) * pagination.per_page + 1} to{' '}
-                            {Math.min(
-                                pagination.current_page * pagination.per_page,
-                                pagination.total,
-                            )}{' '}
-                            of {pagination.total} invoices
+                            Showing {sortedInvoices.length} of {invoices_list.length}{' '}
+                            invoices
                         </span>
                     </div>
                 )}
