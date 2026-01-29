@@ -14,6 +14,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Select,
     SelectContent,
@@ -33,6 +34,16 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import AppLayout from '@/layouts/app-layout';
 import { invoices } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -51,9 +62,14 @@ const breadcrumbs: BreadcrumbItem[] = [
 interface Invoice {
     id: number;
     date: string;
+    due_date?: string;
     status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+    tax_rate: number;
+    description?: string;
     created_at: string;
     updated_at: string;
+    total?: number;
+    totalMinusTax?: number;
 }
 
 interface Task {
@@ -74,9 +90,11 @@ interface Task {
 }
 
 interface InvoiceStats {
+    draft: number;
     sent: number;
     paid: number;
     overdue: number;
+    cancelled: number;
 }
 
 export default function Invoices() {
@@ -92,9 +110,11 @@ export default function Invoices() {
     >('date');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [invoiceStats, setInvoiceStats] = useState<InvoiceStats>({
+        draft: 0,
         sent: 0,
         paid: 0,
         overdue: 0,
+        cancelled: 0,
     });
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({
@@ -107,12 +127,75 @@ export default function Invoices() {
     const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
     const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([]);
     const [isCreating, setIsCreating] = useState(false);
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+    const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+    const [invoiceTasks, setInvoiceTasks] = useState<Task[]>([]);
+    const [editStatus, setEditStatus] = useState<Invoice['status']>('draft');
+    const [isUpdating, setIsUpdating] = useState(false);
+    const [deleteInvoiceId, setDeleteInvoiceId] = useState<number | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
+    // Form fields for create/edit
+    const [formDate, setFormDate] = useState('');
+    const [formDueDate, setFormDueDate] = useState('');
+    const [formTaxRate, setFormTaxRate] = useState('0');
+    const [formDescription, setFormDescription] = useState('');
+
+    // Helper function to convert YYYY-MM-DD to DD/MM/YYYY
+    const formatDateDisplay = (isoDate: string): string => {
+        if (!isoDate) return '';
+        const [year, month, day] = isoDate.split('-');
+        return `${day}/${month}/${year}`;
+    };
+
+    // Helper function to convert DD/MM/YYYY to YYYY-MM-DD
+    const formatDateISO = (displayDate: string): string => {
+        if (!displayDate) return '';
+        const parts = displayDate.split('/');
+        if (parts.length !== 3) return '';
+        const [day, month, year] = parts;
+        // Validate and format
+        const dayNum = parseInt(day, 10);
+        const monthNum = parseInt(month, 10);
+        const yearNum = parseInt(year, 10);
+        if (dayNum < 1 || dayNum > 31 || monthNum < 1 || monthNum > 12 || yearNum < 1900) return '';
+        return `${String(yearNum).padStart(4, '0')}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+    };
 
     useEffect(() => {
         if (currentUserId) {
             fetchInvoices();
         }
     }, [currentUserId]);
+
+    const fetchInvoiceTasks = async (invoiceId: number) => {
+        try {
+            let allTasks: Task[] = [];
+            let currentPage = 1;
+            let lastPage = 1;
+
+            do {
+                const response = await fetch(`/api/tasks?page=${currentPage}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    allTasks = [...allTasks, ...data.data];
+                    lastPage = data.pagination.last_page;
+                    currentPage++;
+                } else {
+                    break;
+                }
+            } while (currentPage <= lastPage);
+
+            const tasks = allTasks.filter(
+                (task) => task.invoice_id === invoiceId
+            );
+            setInvoiceTasks(tasks);
+        } catch (error) {
+            console.error('Error fetching invoice tasks:', error);
+        }
+    };
 
     const fetchAvailableTasks = async () => {
         try {
@@ -195,7 +278,22 @@ export default function Invoices() {
                 userInvoiceIds.has(invoice.id),
             );
 
-            setInvoices(userInvoices);
+            // Calculate total amount for each invoice
+            const invoicesWithTotals = userInvoices.map((invoice) => {
+                const subtotal = allTasks
+                    .filter((task) => task.invoice_id === invoice.id)
+                    .reduce((sum, task) => sum + (Number(task.amount) || 0), 0);
+                const taxRate = Number(invoice.tax_rate) || 0;
+                const totalMinusTax = subtotal - (subtotal * taxRate / 100);
+
+                return {
+                    ...invoice,
+                    total: subtotal,
+                    totalMinusTax: totalMinusTax,
+                };
+            });
+
+            setInvoices(invoicesWithTotals);
             setPagination({
                 total: userInvoices.length,
                 per_page: userInvoices.length,
@@ -204,6 +302,8 @@ export default function Invoices() {
             });
 
             setInvoiceStats({
+                draft: userInvoices.filter((invoice) => invoice.status === 'draft')
+                    .length,
                 sent: userInvoices.filter((invoice) => invoice.status === 'sent')
                     .length,
                 paid: userInvoices.filter((invoice) => invoice.status === 'paid')
@@ -211,6 +311,8 @@ export default function Invoices() {
                 overdue: userInvoices.filter(
                     (invoice) => invoice.status === 'overdue',
                 ).length,
+                cancelled: userInvoices.filter((invoice) => invoice.status === 'cancelled')
+                    .length,
             });
             setLoading(false);
         } catch (error) {
@@ -221,7 +323,7 @@ export default function Invoices() {
 
     const handleCreateInvoice = async () => {
         if (selectedTaskIds.length === 0) {
-            alert('Please select at least one task');
+            setAlertMessage('Please select at least one task');
             return;
         }
 
@@ -237,8 +339,11 @@ export default function Invoices() {
                 },
                 body: JSON.stringify({
                     task_ids: selectedTaskIds,
-                    date: new Date().toISOString().split('T')[0],
+                    date: formatDateISO(formDate) || new Date().toISOString().split('T')[0],
+                    due_date: formatDateISO(formDueDate) || null,
                     status: 'draft',
+                    tax_rate: Number(formTaxRate) || 0,
+                    description: formDescription || null,
                 }),
             });
 
@@ -247,18 +352,177 @@ export default function Invoices() {
             if (data.success) {
                 // Reset dialog state
                 setSelectedTaskIds([]);
+                setFormDate('');
+                setFormDueDate('');
+                setFormTaxRate('0');
+                setFormDescription('');
                 setIsCreateDialogOpen(false);
                 // Refresh data
                 await fetchInvoices();
                 await fetchAvailableTasks();
             } else {
-                alert(data.message || 'Failed to create invoice');
+                setAlertMessage(data.message || 'Failed to create invoice');
             }
         } catch (error) {
             console.error('Error creating invoice:', error);
-            alert('Failed to create invoice');
+            setAlertMessage('Failed to create invoice');
         } finally {
             setIsCreating(false);
+        }
+    };
+
+    const handleEditInvoice = async (invoice: Invoice) => {
+        setEditingInvoice(invoice);
+        setEditStatus(invoice.status);
+        // Format dates to DD/MM/YYYY for display
+        const dateStr = new Date(invoice.date).toISOString().split('T')[0];
+        const dueDateStr = invoice.due_date ? new Date(invoice.due_date).toISOString().split('T')[0] : '';
+        setFormDate(formatDateDisplay(dateStr));
+        setFormDueDate(formatDateDisplay(dueDateStr));
+        setFormTaxRate(String(invoice.tax_rate || 0));
+        setFormDescription(invoice.description || '');
+        setSelectedTaskIds([]);
+        setIsEditDialogOpen(true);
+        await Promise.all([
+            fetchInvoiceTasks(invoice.id),
+            fetchAvailableTasks(),
+        ]);
+    };
+
+    const handleUpdateInvoice = async () => {
+        if (!editingInvoice) return;
+
+        setIsUpdating(true);
+        try {
+            // Get current task IDs for this invoice
+            const currentTaskIds = invoiceTasks.map((task) => task.id);
+
+            // Combine: keep existing tasks + add newly selected tasks
+            const allTaskIds = Array.from(
+                new Set([...currentTaskIds, ...selectedTaskIds])
+            );
+
+            // If no tasks are assigned, delete the invoice instead
+            if (allTaskIds.length === 0) {
+                const deleteResponse = await fetch(`/api/invoices/${editingInvoice.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') || '',
+                    },
+                });
+
+                const deleteData = await deleteResponse.json();
+
+                if (deleteData.success) {
+                    setIsEditDialogOpen(false);
+                    setEditingInvoice(null);
+                    setSelectedTaskIds([]);
+                    setAlertMessage('Invoice deleted because it has no tasks assigned.');
+                    await fetchInvoices();
+                } else {
+                    setAlertMessage(deleteData.message || 'Failed to delete invoice');
+                }
+            } else {
+                const response = await fetch(`/api/invoices/${editingInvoice.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') || '',
+                    },
+                    body: JSON.stringify({
+                        date: formatDateISO(formDate),
+                        status: editStatus,
+                        due_date: formatDateISO(formDueDate) || null,
+                        tax_rate: Number(formTaxRate) || 0,
+                        description: formDescription || null,
+                        task_ids: allTaskIds,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    setIsEditDialogOpen(false);
+                    setEditingInvoice(null);
+                    setSelectedTaskIds([]);
+                    await fetchInvoices();
+                } else {
+                    setAlertMessage(data.message || 'Failed to update invoice');
+                }
+            }
+        } catch (error) {
+            console.error('Error updating invoice:', error);
+            setAlertMessage('Failed to update invoice');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const handleRemoveTaskFromInvoice = async (taskId: number) => {
+        if (!editingInvoice) return;
+
+        try {
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document
+                        .querySelector('meta[name="csrf-token"]')
+                        ?.getAttribute('content') || '',
+                },
+                body: JSON.stringify({
+                    invoice_id: null,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Refresh the task lists
+                await Promise.all([
+                    fetchInvoiceTasks(editingInvoice.id),
+                    fetchAvailableTasks(),
+                ]);
+            } else {
+                setAlertMessage(data.message || 'Failed to remove task');
+            }
+        } catch (error) {
+            console.error('Error removing task:', error);
+            setAlertMessage('Failed to remove task');
+        }
+    };
+
+    const handleDeleteInvoice = async () => {
+        if (!deleteInvoiceId) return;
+
+        setIsDeleting(true);
+        try {
+            const response = await fetch(`/api/invoices/${deleteInvoiceId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': document
+                        .querySelector('meta[name="csrf-token"]')
+                        ?.getAttribute('content') || '',
+                },
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setDeleteInvoiceId(null);
+                await fetchInvoices();
+            } else {
+                setAlertMessage(data.message || 'Failed to delete invoice');
+            }
+        } catch (error) {
+            console.error('Error deleting invoice:', error);
+            setAlertMessage('Failed to delete invoice');
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -345,6 +609,12 @@ export default function Invoices() {
                         if (open) {
                             fetchAvailableTasks();
                             setSelectedTaskIds([]);
+                            const today = new Date().toISOString().split('T')[0];
+                            const todayDisplay = formatDateDisplay(today);
+                            setFormDate(todayDisplay);
+                            setFormDueDate(todayDisplay);
+                            setFormTaxRate('0');
+                            setFormDescription('');
                         }
                     }}>
                         <DialogTrigger asChild>
@@ -366,6 +636,52 @@ export default function Invoices() {
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
+                                        {/* Invoice Details */}
+                                        <div className="space-y-3 border-b pb-4">
+                                            <div className="text-sm font-medium">Invoice Details</div>
+                                            <div className="grid gap-3 md:grid-cols-3">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="create-date">Invoice Date</Label>
+                                                    <Input
+                                                        id="create-date"
+                                                        type="date"
+                                                        value={formDate ? formatDateISO(formDate) : ''}
+                                                        onChange={(e) => setFormDate(formatDateDisplay(e.target.value))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="create-due-date">Due Date</Label>
+                                                    <Input
+                                                        id="create-due-date"
+                                                        type="date"
+                                                        value={formDueDate ? formatDateISO(formDueDate) : ''}
+                                                        onChange={(e) => setFormDueDate(formatDateDisplay(e.target.value))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="create-tax-rate">Tax Rate (%)</Label>
+                                                    <Input
+                                                        id="create-tax-rate"
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        step="0.01"
+                                                        value={formTaxRate}
+                                                        onChange={(e) => setFormTaxRate(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="create-description">Description (Optional)</Label>
+                                                <Textarea
+                                                    id="create-description"
+                                                    placeholder="Add notes or description for this invoice..."
+                                                    value={formDescription}
+                                                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormDescription(e.target.value)}
+                                                    rows={3}
+                                                />
+                                            </div>
+                                        </div>
                                         <div className="text-sm font-medium">
                                             Select Tasks ({selectedTaskIds.length} selected)
                                         </div>
@@ -430,7 +746,19 @@ export default function Invoices() {
                 </div>
 
                 {/* Invoice Stats */}
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-5">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Draft
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {invoiceStats.draft}
+                            </div>
+                        </CardContent>
+                    </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-sm font-medium">
@@ -464,6 +792,18 @@ export default function Invoices() {
                         <CardContent>
                             <div className="text-2xl font-bold">
                                 {invoiceStats.overdue}
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Cancelled
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {invoiceStats.cancelled}
                             </div>
                         </CardContent>
                     </Card>
@@ -566,50 +906,79 @@ export default function Invoices() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Invoice ID</TableHead>
-                                        <TableHead>Date</TableHead>
+                                        <TableHead>Invoice Date</TableHead>
+                                        <TableHead>Due Date</TableHead>
                                         <TableHead>Status</TableHead>
-                                        <TableHead>Created</TableHead>
+                                        <TableHead className="text-right">Before Tax</TableHead>
+                                        <TableHead className="text-right">Tax</TableHead>
+                                        <TableHead className="text-right">After Tax</TableHead>
                                         <TableHead className="text-right">
                                             Actions
                                         </TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {sortedInvoices.map((invoice) => (
-                                        <TableRow key={invoice.id}>
-                                            <TableCell className="font-medium">
-                                                #{invoice.id}
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(
-                                                    invoice.date,
-                                                ).toLocaleDateString('pt-PT')}
-                                            </TableCell>
-                                            <TableCell>
-                                                <span
-                                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(invoice.status)}`}
-                                                >
-                                                    {invoice.status.charAt(0).toUpperCase() +
-                                                        invoice.status.slice(1)}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(
-                                                    invoice.created_at,
-                                                ).toLocaleDateString('pt-PT')}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    <button className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-                                                        Edit
-                                                    </button>
-                                                    <button className="text-sm text-red-600 hover:underline dark:text-red-400">
-                                                        Delete
-                                                    </button>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                    {sortedInvoices.map((invoice) => {
+                                        const taxRate = Number(invoice.tax_rate) || 0;
+                                        const subtotal = invoice.total || 0;
+                                        const taxAmount = subtotal * taxRate / 100;
+
+                                        return (
+                                            <TableRow key={invoice.id}>
+                                                <TableCell className="font-medium">
+                                                    #{invoice.id}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {new Date(
+                                                        invoice.date,
+                                                    ).toLocaleDateString('pt-PT')}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {invoice.due_date
+                                                        ? new Date(invoice.due_date).toLocaleDateString('pt-PT')
+                                                        : '-'
+                                                    }
+                                                </TableCell>
+                                                <TableCell>
+                                                    <span
+                                                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(invoice.status)}`}
+                                                    >
+                                                        {invoice.status.charAt(0).toUpperCase() +
+                                                            invoice.status.slice(1)}
+                                                    </span>
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {subtotal.toFixed(2)} €
+                                                </TableCell>
+                                                <TableCell className="text-right text-muted-foreground">
+                                                    {taxRate}% ({taxAmount.toFixed(2)} €)
+                                                </TableCell>
+                                                <TableCell className="text-right font-medium">
+                                                    {(invoice.totalMinusTax || 0).toFixed(2)} €
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => handleEditInvoice(invoice)}
+                                                            className="h-8 text-primary hover:text-primary/90 hover:bg-primary/10"
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => setDeleteInvoiceId(invoice.id)}
+                                                            className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                                                        >
+                                                            Delete
+                                                        </Button>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
                                 </TableBody>
                             </Table>
                         )}
@@ -625,6 +994,230 @@ export default function Invoices() {
                         </span>
                     </div>
                 )}
+
+                {/* Edit Invoice Dialog */}
+                <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle>Edit Invoice #{editingInvoice?.id}</DialogTitle>
+                            <DialogDescription>
+                                Manage tasks and update invoice status
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-6">
+                            {/* Invoice Details */}
+                            <div className="space-y-3 border-b pb-4">
+                                <div className="text-sm font-medium">Invoice Details</div>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="edit-date">Invoice Date</Label>
+                                        <Input
+                                            id="edit-date"
+                                            type="date"
+                                            value={formDate ? formatDateISO(formDate) : ''}
+                                            onChange={(e) => setFormDate(formatDateDisplay(e.target.value))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="edit-due-date">Due Date</Label>
+                                        <Input
+                                            id="edit-due-date"
+                                            type="date"
+                                            value={formDueDate ? formatDateISO(formDueDate) : ''}
+                                            onChange={(e) => setFormDueDate(formatDateDisplay(e.target.value))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="edit-tax-rate">Tax Rate (%)</Label>
+                                        <Input
+                                            id="edit-tax-rate"
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value={formTaxRate}
+                                            onChange={(e) => setFormTaxRate(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="edit-description">Description</Label>
+                                    <Textarea
+                                        id="edit-description"
+                                        placeholder="Add notes or description for this invoice..."
+                                        value={formDescription}
+                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormDescription(e.target.value)}
+                                        rows={3}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Status Selection */}
+                            <div className="space-y-2">
+                                <Label>Invoice Status</Label>
+                                <Select value={editStatus} onValueChange={(value) => setEditStatus(value as Invoice['status'])}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="draft">Draft</SelectItem>
+                                        <SelectItem value="sent">Sent</SelectItem>
+                                        <SelectItem value="paid">Paid</SelectItem>
+                                        <SelectItem value="overdue">Overdue</SelectItem>
+                                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Current Tasks */}
+                            <div className="space-y-2">
+                                <Label>Current Tasks in Invoice</Label>
+                                {invoiceTasks.length === 0 ? (
+                                    <div className="text-sm text-muted-foreground p-4 border rounded-lg">
+                                        No tasks in this invoice
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 border rounded-lg p-4 max-h-48 overflow-y-auto">
+                                        {invoiceTasks.map((task) => (
+                                            <div
+                                                key={task.id}
+                                                className="flex items-start justify-between gap-3 p-3 rounded-lg border bg-accent/30"
+                                            >
+                                                <div className="flex-1 space-y-1">
+                                                    <div className="font-medium">{task.title}</div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        {task.client_company && (
+                                                            <span>{task.client_company} • </span>
+                                                        )}
+                                                        <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
+                                                        {task.amount && (
+                                                            <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRemoveTaskFromInvoice(task.id)}
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                                                >
+                                                    Remove
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="text-sm text-muted-foreground">
+                                    Total: $
+                                    {invoiceTasks
+                                        .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
+                                        .toFixed(2)}
+                                </div>
+                            </div>
+
+                            {/* Add More Tasks */}
+                            {availableTasks.length > 0 && (
+                                <div className="space-y-2">
+                                    <Label>Add Tasks to Invoice ({selectedTaskIds.length} selected)</Label>
+                                    <div className="space-y-2 border rounded-lg p-4 max-h-64 overflow-y-auto">
+                                        {availableTasks.map((task) => (
+                                            <div
+                                                key={task.id}
+                                                className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                                            >
+                                                <Checkbox
+                                                    id={`edit-task-${task.id}`}
+                                                    checked={selectedTaskIds.includes(task.id)}
+                                                    onCheckedChange={() => toggleTaskSelection(task.id)}
+                                                />
+                                                <Label
+                                                    htmlFor={`edit-task-${task.id}`}
+                                                    className="flex-1 cursor-pointer space-y-1"
+                                                >
+                                                    <div className="font-medium">{task.title}</div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        {task.client_company && (
+                                                            <span>{task.client_company} • </span>
+                                                        )}
+                                                        <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
+                                                        {task.amount && (
+                                                            <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                        )}
+                                                    </div>
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {selectedTaskIds.length > 0 && (
+                                        <div className="text-sm text-muted-foreground">
+                                            Adding: $
+                                            {availableTasks
+                                                .filter((task) => selectedTaskIds.includes(task.id))
+                                                .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
+                                                .toFixed(2)}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsEditDialogOpen(false)}
+                                disabled={isUpdating}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleUpdateInvoice}
+                                disabled={isUpdating}
+                            >
+                                {isUpdating ? 'Updating...' : 'Update Invoice'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Delete Confirmation Dialog */}
+                <AlertDialog open={deleteInvoiceId !== null} onOpenChange={(open: boolean) => !open && setDeleteInvoiceId(null)}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Are you sure you want to delete invoice #{deleteInvoiceId}? This will remove the invoice and unassign all its tasks. This action cannot be undone.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={handleDeleteInvoice}
+                                disabled={isDeleting}
+                                className="bg-red-600 hover:bg-red-700"
+                            >
+                                {isDeleting ? 'Deleting...' : 'Delete'}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Generic Alert Dialog */}
+                <AlertDialog open={alertMessage !== null} onOpenChange={(open: boolean) => !open && setAlertMessage(null)}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Message</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {alertMessage}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogAction
+                                onClick={() => setAlertMessage(null)}
+                            >
+                                OK
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </AppLayout>
     );

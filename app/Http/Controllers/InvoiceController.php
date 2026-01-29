@@ -44,7 +44,10 @@ class InvoiceController extends Controller
         try {
             $validated = $request->validate([
                 'date' => 'required|date',
+                'due_date' => 'nullable|date|after_or_equal:date',
                 'status' => 'required|in:draft,sent,paid,overdue,cancelled',
+                'tax_rate' => 'nullable|numeric|min:0|max:100',
+                'description' => 'nullable|string|max:5000',
                 'task_ids' => 'required|array|min:1',
                 'task_ids.*' => 'required|integer|exists:tasks,id',
             ]);
@@ -52,7 +55,10 @@ class InvoiceController extends Controller
             // Create the invoice
             $invoice = Invoice::create([
                 'date' => $validated['date'],
+                'due_date' => $validated['due_date'] ?? null,
                 'status' => $validated['status'],
+                'tax_rate' => $validated['tax_rate'] ?? 0,
+                'description' => $validated['description'] ?? null,
             ]);
 
             // Associate tasks with the invoice
@@ -131,10 +137,55 @@ class InvoiceController extends Controller
 
             $validated = $request->validate([
                 'date' => 'sometimes|required|date',
+                'due_date' => 'nullable|date',
                 'status' => 'sometimes|required|in:draft,sent,paid,overdue,cancelled',
+                'tax_rate' => 'nullable|numeric|min:0|max:100',
+                'description' => 'nullable|string|max:5000',
+                'task_ids' => 'sometimes|array',
+                'task_ids.*' => 'required|integer|exists:tasks,id',
             ]);
 
-            $invoice->update($validated);
+            // Update invoice basic fields
+            if (isset($validated['date'])) {
+                $invoice->date = $validated['date'];
+            }
+            if (isset($validated['due_date'])) {
+                $invoice->due_date = $validated['due_date'];
+            }
+            if (isset($validated['status'])) {
+                $invoice->status = $validated['status'];
+            }
+            if (isset($validated['tax_rate'])) {
+                $invoice->tax_rate = $validated['tax_rate'];
+            }
+            if (isset($validated['description'])) {
+                $invoice->description = $validated['description'];
+            }
+            $invoice->save();
+
+            // If task_ids are provided, update task associations
+            if (isset($validated['task_ids'])) {
+                // Verify that new tasks don't already have an invoice (except this one)
+                $newTasks = \App\Models\Task::whereIn('id', $validated['task_ids'])
+                    ->where(function ($query) use ($invoice) {
+                        $query->whereNull('invoice_id')
+                            ->orWhere('invoice_id', $invoice->id);
+                    })
+                    ->get();
+
+                if ($newTasks->count() !== count($validated['task_ids'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Some tasks are already assigned to another invoice',
+                    ], 400);
+                }
+
+                // Update all tasks to have this invoice_id
+                foreach ($newTasks as $task) {
+                    $task->invoice_id = $invoice->id;
+                    $task->save();
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -168,6 +219,11 @@ class InvoiceController extends Controller
     {
         try {
             $invoice = Invoice::findOrFail($id);
+
+            // Unassign all tasks from this invoice
+            \App\Models\Task::where('invoice_id', $invoice->id)
+                ->update(['invoice_id' => null]);
+
             $invoice->delete();
 
             return response()->json([

@@ -13,7 +13,10 @@ class Invoice extends Model
      */
     protected $fillable = [
         'date',
+        'due_date',
         'status',
+        'tax_rate',
+        'description',
     ];
 
     /**
