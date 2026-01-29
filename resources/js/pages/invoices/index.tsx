@@ -17,7 +17,8 @@ import AppLayout from '@/layouts/app-layout';
 import { invoices } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
-import { FileText, Plus } from 'lucide-react';
+import { usePage } from '@inertiajs/react';
+import { FileText } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -35,8 +36,27 @@ interface Invoice {
     updated_at: string;
 }
 
+interface Task {
+    id: number;
+    invoice_id: number | null;
+    user_id: number;
+}
+
+interface InvoiceStats {
+    sent: number;
+    paid: number;
+    overdue: number;
+}
+
 export default function Invoices() {
+    const { auth } = usePage().props as any;
+    const currentUserId = auth?.user?.id;
     const [invoices_list, setInvoices] = useState<Invoice[]>([]);
+    const [invoiceStats, setInvoiceStats] = useState<InvoiceStats>({
+        sent: 0,
+        paid: 0,
+        overdue: 0,
+    });
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({
         total: 0,
@@ -46,18 +66,78 @@ export default function Invoices() {
     });
 
     useEffect(() => {
-        fetchInvoices();
-    }, []);
+        if (currentUserId) {
+            fetchInvoices();
+        }
+    }, [currentUserId]);
 
-    const fetchInvoices = async (page = 1) => {
+    const fetchInvoices = async () => {
         try {
-            const response = await fetch(`/api/invoices?page=${page}`);
-            const data = await response.json();
+            // First, fetch all tasks to find invoice IDs for current user
+            let allTasks: Task[] = [];
+            let currentPage = 1;
+            let lastPage = 1;
 
-            if (data.success) {
-                setInvoices(data.data);
-                setPagination(data.pagination);
-            }
+            do {
+                const tasksResponse = await fetch(`/api/tasks?page=${currentPage}`);
+                const tasksData = await tasksResponse.json();
+
+                if (tasksData.success) {
+                    allTasks = [...allTasks, ...tasksData.data];
+                    lastPage = tasksData.pagination.last_page;
+                    currentPage++;
+                } else {
+                    break;
+                }
+            } while (currentPage <= lastPage);
+
+            // Filter tasks for current user and get their invoice IDs
+            const userInvoiceIds = new Set(
+                allTasks
+                    .filter((task) => task.user_id === currentUserId && task.invoice_id !== null)
+                    .map((task) => task.invoice_id)
+            );
+
+            // Now fetch all invoices (handle pagination)
+            let allInvoices: Invoice[] = [];
+            currentPage = 1;
+            lastPage = 1;
+
+            do {
+                const response = await fetch(`/api/invoices?page=${currentPage}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    allInvoices = [...allInvoices, ...data.data];
+                    lastPage = data.pagination.last_page;
+                    currentPage++;
+                } else {
+                    break;
+                }
+            } while (currentPage <= lastPage);
+
+            // Filter invoices to only show those related to user's tasks
+            const userInvoices = allInvoices.filter((invoice) =>
+                userInvoiceIds.has(invoice.id),
+            );
+
+            setInvoices(userInvoices);
+            setPagination({
+                total: userInvoices.length,
+                per_page: userInvoices.length,
+                current_page: userInvoices.length ? 1 : 0,
+                last_page: userInvoices.length ? 1 : 0,
+            });
+
+            setInvoiceStats({
+                sent: userInvoices.filter((invoice) => invoice.status === 'sent')
+                    .length,
+                paid: userInvoices.filter((invoice) => invoice.status === 'paid')
+                    .length,
+                overdue: userInvoices.filter(
+                    (invoice) => invoice.status === 'overdue',
+                ).length,
+            });
             setLoading(false);
         } catch (error) {
             console.error('Error fetching invoices:', error);
@@ -90,7 +170,7 @@ export default function Invoices() {
                 <div className="flex items-center justify-between">
                     <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                            <FileText className="h-8 w-8" />
+                            {/* <FileText className="h-8 w-8" /> */}
                             <h1 className="text-3xl font-bold tracking-tight">
                                 Invoices
                             </h1>
@@ -99,6 +179,46 @@ export default function Invoices() {
                             Manage and track all your invoices
                         </p>
                     </div>
+                </div>
+
+                {/* Invoice Stats */}
+                <div className="grid gap-4 md:grid-cols-3">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Sent
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {invoiceStats.sent}
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Paid
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {invoiceStats.paid}
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Overdue
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {invoiceStats.overdue}
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
 
                 {/* Invoices Table */}
