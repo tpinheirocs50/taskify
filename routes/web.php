@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Client;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -20,7 +21,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     })->name('tasks');
 
     Route::get('clients', function () {
-        return Inertia::render('clients/index');
+        $clients = Client::orderBy('id', 'desc')->get();
+        return Inertia::render('clients/index', [
+            'clients' => $clients,
+        ]);
     })->name('clients');
 
     Route::get('invoices', function () {
@@ -28,8 +32,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     })->name('invoices');
 });
 
-Route::get('/clients', function () {
-    return Inertia::render('clients/index');
-});
+
 
 require __DIR__.'/settings.php';
