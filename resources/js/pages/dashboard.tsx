@@ -6,6 +6,12 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import {
+    ChartContainer,
+    ChartTooltip,
+    ChartTooltipContent,
+    type ChartConfig,
+} from '@/components/ui/chart';
+import {
     Table,
     TableBody,
     TableCell,
@@ -24,15 +30,8 @@ import {
     ListTodo,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import {
-    Area,
-    AreaChart,
-    CartesianGrid,
-    ResponsiveContainer,
-    Tooltip,
-    XAxis,
-    YAxis,
-} from 'recharts';
+import { usePage } from '@inertiajs/react';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -49,6 +48,7 @@ interface Task {
     status: 'pending' | 'in_progress' | 'completed';
     due_date: string;
     amount: number | null;
+    user_id: number;
     user_name: string;
     client_name: string;
     client_company: string | null;
@@ -67,6 +67,8 @@ interface MonthlyRevenue {
 }
 
 export default function Dashboard() {
+    const { auth } = usePage().props as any;
+    const currentUserId = auth?.user?.id;
     const [stats, setStats] = useState<DashboardStats>({
         totalRevenue: 0,
         openTasks: 0,
@@ -75,56 +77,61 @@ export default function Dashboard() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isDark, setIsDark] = useState(false);
+    const chartConfig = {
+        revenue: {
+            label: 'Revenue',
+            color: 'var(--primary)',
+        },
+    } satisfies ChartConfig;
 
     useEffect(() => {
-        // Detect dark mode
-        const isDarkMode =
-            document.documentElement.classList.contains('dark');
-        setIsDark(isDarkMode);
+        // Fetch all tasks handling pagination
+        const fetchAllTasks = async () => {
+            try {
+                let allTasks: Task[] = [];
+                let currentPage = 1;
+                let lastPage = 1;
 
-        // Listen for theme changes
-        const observer = new MutationObserver(() => {
-            setIsDark(
-                document.documentElement.classList.contains('dark'),
-            );
-        });
+                // Fetch first page to get pagination info
+                do {
+                    const response = await fetch(`/api/tasks?page=${currentPage}`);
+                    const data = await response.json();
 
-        observer.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ['class'],
-        });
+                    if (data.success) {
+                        allTasks = [...allTasks, ...data.data];
+                        lastPage = data.pagination.last_page;
+                        currentPage++;
+                    } else {
+                        break;
+                    }
+                } while (currentPage <= lastPage);
 
-        return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        // Fetch tasks data
-        fetch('/api/tasks')
-            .then((res) => res.json())
-            .then((data) => {
-                if (data.success) {
-                    const tasksData = data.data as Task[];
-                    setTasks(tasksData);
-
-                    // Calculate stats
-                    const totalRevenue = tasksData.reduce(
+                // Filter tasks for current user
+                const userTasks = allTasks.filter(
+                    (task) => task.user_id === currentUserId,
+                );
+                setTasks(userTasks);
+                const totalRevenue = userTasks
+                    .filter((task) => task.status === 'completed')
+                    .reduce(
                         (sum, task) => sum + (Number(task.amount) || 0),
                         0,
                     );
-                    const openTasks = tasksData.filter(
-                        (task) => task.status !== 'completed',
-                    ).length;
+                const openTasks = userTasks.filter(
+                    (task) => task.status !== 'completed',
+                ).length;
 
-                    setStats({
-                        totalRevenue,
-                        openTasks,
-                        allTasks: tasksData.length,
-                    });
+                setStats({
+                    totalRevenue,
+                    openTasks,
+                    allTasks: userTasks.length,
+                });
 
-                    // Calculate monthly revenue (last 6 months)
-                    const revenueByMonth: { [key: string]: number } = {};
-                    tasksData.forEach((task) => {
+                // Calculate monthly revenue (last 6 months) - only from completed tasks
+                const revenueByMonth: { [key: string]: number } = {};
+                userTasks
+                    .filter((task) => task.status === 'completed')
+                    .forEach((task) => {
                         const date = new Date(task.due_date);
                         const monthKey = date.toLocaleDateString('en-US', {
                             year: 'numeric',
@@ -135,31 +142,34 @@ export default function Dashboard() {
                             (Number(task.amount) || 0);
                     });
 
-                    // Get last 6 months
-                    const months: MonthlyRevenue[] = [];
-                    for (let i = 5; i >= 0; i--) {
-                        const date = new Date();
-                        date.setMonth(date.getMonth() - i);
-                        const monthKey = date.toLocaleDateString('en-US', {
-                            year: 'numeric',
+                // Get last 6 months
+                const months: MonthlyRevenue[] = [];
+                for (let i = 5; i >= 0; i--) {
+                    const date = new Date();
+                    date.setMonth(date.getMonth() - i);
+                    const monthKey = date.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                    });
+                    months.push({
+                        month: date.toLocaleDateString('en-US', {
                             month: 'short',
-                        });
-                        months.push({
-                            month: date.toLocaleDateString('en-US', {
-                                month: 'short',
-                            }),
-                            revenue: revenueByMonth[monthKey] || 0,
-                        });
-                    }
-                    setMonthlyRevenue(months);
+                        }),
+                        revenue: revenueByMonth[monthKey] || 0,
+                    });
                 }
+                setMonthlyRevenue(months);
                 setLoading(false);
-            })
-            .catch((error) => {
+            } catch (error) {
                 console.error('Error fetching tasks:', error);
                 setLoading(false);
-            });
-    }, []);
+            }
+        };
+
+        if (currentUserId) {
+            fetchAllTasks();
+        }
+    }, [currentUserId]);
 
     const getPriorityColor = (priority: string) => {
         switch (priority) {
@@ -262,21 +272,28 @@ export default function Dashboard() {
                     </Card>
                 </div>
 
-                {/* Monthly Revenue Chart */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Monthly Revenue</CardTitle>
-                        <CardDescription>
-                            Revenue trends over the last 6 months
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="h-[300px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={monthlyRevenue}>
+                {/* Chart and Upcoming Tasks Row */}
+                <div className="grid gap-4 lg:grid-cols-3">
+                    {/* Monthly Revenue Chart */}
+                    <Card className="lg:col-span-2">
+                        <CardHeader>
+                            <CardTitle>Monthly Revenue</CardTitle>
+                            <CardDescription>
+                                Revenue trends over the last 6 months
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ChartContainer
+                                config={chartConfig}
+                                className="h-[300px] w-full"
+                            >
+                                <AreaChart
+                                    data={monthlyRevenue}
+                                    margin={{ left: 12, right: 12 }}
+                                >
                                     <defs>
                                         <linearGradient
-                                            id="colorRevenue"
+                                            id="fillRevenue"
                                             x1="0"
                                             y1="0"
                                             x2="0"
@@ -284,60 +301,201 @@ export default function Dashboard() {
                                         >
                                             <stop
                                                 offset="5%"
-                                                stopColor="#3b82f6"
+                                                stopColor="var(--color-revenue)"
                                                 stopOpacity={0.3}
                                             />
                                             <stop
                                                 offset="95%"
-                                                stopColor="#3b82f6"
+                                                stopColor="var(--color-revenue)"
                                                 stopOpacity={0}
                                             />
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid
-                                        strokeDasharray="3 3"
-                                        stroke={isDark ? '#404040' : '#e5e7eb'}
-                                    />
+                                    <CartesianGrid vertical={false} />
                                     <XAxis
                                         dataKey="month"
-                                        stroke={isDark ? '#737373' : '#9ca3af'}
-                                        tick={{
-                                            fill: isDark ? '#a3a3a3' : '#6b7280',
-                                            fontSize: 12,
-                                        }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickMargin={8}
                                     />
                                     <YAxis
-                                        stroke={isDark ? '#737373' : '#9ca3af'}
-                                        tick={{
-                                            fill: isDark ? '#a3a3a3' : '#6b7280',
-                                            fontSize: 12,
-                                        }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickMargin={8}
                                     />
-                                    <Tooltip
-                                        contentStyle={{
-                                            backgroundColor: isDark
-                                                ? '#27272a'
-                                                : '#ffffff',
-                                            border: `1px solid ${isDark ? '#404040' : '#e5e7eb'}`,
-                                            borderRadius: '0.5rem',
-                                            color: isDark ? '#fafafa' : '#000000',
-                                        }}
-                                        labelStyle={{
-                                            color: isDark ? '#fafafa' : '#000000',
-                                        }}
-                                    />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
                                     <Area
                                         type="monotone"
                                         dataKey="revenue"
-                                        stroke="#3b82f6"
+                                        name="Revenue"
+                                        stroke="var(--color-revenue)"
                                         fillOpacity={1}
-                                        fill="url(#colorRevenue)"
+                                        fill="url(#fillRevenue)"
                                     />
                                 </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </CardContent>
-                </Card>
+                            </ChartContainer>
+                        </CardContent>
+                    </Card>
+
+                    {/* Upcoming Tasks Card */}
+                    <Card className="flex h-full flex-col">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-sm font-medium">
+                                Open Tasks
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                All overdue & upcoming tasks
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex min-h-0 flex-1 flex-col">
+                            {(() => {
+                                const now = new Date();
+                                now.setHours(0, 0, 0, 0);
+
+                                const allNonCompletedTasks = tasks.filter(
+                                    (task) => task.status !== 'completed',
+                                );
+
+                                const overdueTasks = allNonCompletedTasks.filter(
+                                    (task) => {
+                                        const dueDate = new Date(
+                                            task.due_date,
+                                        );
+                                        dueDate.setHours(0, 0, 0, 0);
+                                        return dueDate < now;
+                                    },
+                                );
+
+                                const upcomingTasks = allNonCompletedTasks.filter(
+                                    (task) => {
+                                        const dueDate = new Date(
+                                            task.due_date,
+                                        );
+                                        dueDate.setHours(0, 0, 0, 0);
+                                        return dueDate >= now;
+                                    },
+                                );
+
+                                const groupTasksByDay = (taskList: typeof tasks) => {
+                                    const tasksByDay: Record<string, typeof tasks> = {};
+                                    taskList.forEach((task) => {
+                                        const dateKey = new Date(
+                                            task.due_date,
+                                        ).toLocaleDateString('en-US', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                        });
+                                        if (!tasksByDay[dateKey]) {
+                                            tasksByDay[dateKey] = [];
+                                        }
+                                        tasksByDay[dateKey].push(task);
+                                    });
+                                    return tasksByDay;
+                                };
+
+                                const renderTaskSection = (tasksByDay: Record<string, typeof tasks>, title: string, count: number, isOverdue: boolean = false) => {
+                                    const sortedDays = Object.keys(tasksByDay).sort((a, b) => {
+                                        const dateA = new Date(tasksByDay[a][0].due_date);
+                                        const dateB = new Date(tasksByDay[b][0].due_date);
+                                        return dateA.getTime() - dateB.getTime();
+                                    });
+
+                                    return (
+                                        <div>
+                                            <div className="mb-3 flex items-center gap-2">
+                                                <span className="text-xs font-semibold uppercase text-muted-foreground">{title}</span>
+                                                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{count}</span>
+                                            </div>
+                                            <div className="space-y-4">
+                                                {sortedDays.map((day) => (
+                                                    <div key={day}>
+                                                        <div className="mb-2 text-xs font-semibold text-muted-foreground">
+                                                            {day}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            {tasksByDay[day].map((task) => (
+                                                                <div
+                                                                    key={task.id}
+                                                                    className={`items-center gap-2 rounded-md border p-3 text-sm space-y-2 ${isOverdue
+                                                                        ? 'border-destructive/50 bg-destructive/20'
+                                                                        : 'bg-card'
+                                                                        }`}
+                                                                >
+                                                                    <div className="min-w-0 flex-1 space-y-1">
+                                                                        <div className="font-medium leading-none">
+                                                                            {task.title.length > 40
+                                                                                ? task.title.substring(0, 40) + '...'
+                                                                                : task.title}
+                                                                        </div>
+                                                                        <div className="text-xs text-muted-foreground">
+                                                                            <span className="truncate">
+                                                                                {task.client_company || task.client_name}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-xs text-muted-foreground">
+                                                                        <span
+                                                                            className={`capitalize ${getPriorityColor(task.priority)}`}
+                                                                        >
+                                                                            {task.priority}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="text-xs text-muted-foreground">
+                                                                        <span
+                                                                            className={`inline-flex shrink-0 items-center rounded-full px-2 py-1.5 text-xs font-medium ${getStatusBadge(task.status)}`}
+                                                                        >
+                                                                            {task.status.replace('_', ' ')}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                };
+
+                                if (overdueTasks.length === 0 && upcomingTasks.length === 0) {
+                                    return (
+                                        <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                                            No tasks
+                                        </div>
+                                    );
+                                }
+
+                                const overdueByDay = groupTasksByDay(overdueTasks);
+                                const upcomingByDay = groupTasksByDay(upcomingTasks);
+
+                                return (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="min-h-0 max-h-[280px] overflow-y-auto scrollbar-hidden">
+                                            {upcomingTasks.length > 0 ? (
+                                                renderTaskSection(upcomingByDay, 'Upcoming', upcomingTasks.length)
+                                            ) : (
+                                                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                                                    No upcoming tasks
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="min-h-0 max-h-[280px] overflow-y-auto scrollbar-hidden">
+                                            {overdueTasks.length > 0 ? (
+                                                renderTaskSection(overdueByDay, 'Overdue', overdueTasks.length, true)
+                                            ) : (
+                                                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                                                    No overdue tasks
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </CardContent>
+                    </Card>
+
+                </div>
 
                 {/* Tasks Table */}
                 <Card>
