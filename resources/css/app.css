@@ -132,6 +132,132 @@
     --sidebar-ring: oklch(0.439 0 0);
 }
 
+:root.theme-blue {
+    --primary: oklch(0.62 0.2 255);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.62 0.2 255);
+    --sidebar-primary: oklch(0.62 0.2 255);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --chart-1: oklch(0.62 0.2 255);
+}
+
+.dark.theme-blue {
+    --primary: oklch(0.78 0.15 255);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.78 0.15 255);
+    --sidebar-primary: oklch(0.78 0.15 255);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.78 0.15 255);
+}
+
+:root.theme-green {
+    --primary: oklch(0.62 0.18 150);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.62 0.18 150);
+    --sidebar-primary: oklch(0.62 0.18 150);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --chart-1: oklch(0.62 0.18 150);
+}
+
+.dark.theme-green {
+    --primary: oklch(0.78 0.15 150);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.78 0.15 150);
+    --sidebar-primary: oklch(0.78 0.15 150);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.78 0.15 150);
+}
+
+:root.theme-orange {
+    --primary: oklch(0.7 0.17 55);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.7 0.17 55);
+    --sidebar-primary: oklch(0.7 0.17 55);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.7 0.17 55);
+}
+
+.dark.theme-orange {
+    --primary: oklch(0.82 0.14 55);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.82 0.14 55);
+    --sidebar-primary: oklch(0.82 0.14 55);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.82 0.14 55);
+}
+
+:root.theme-red {
+    --primary: oklch(0.6 0.22 25);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.6 0.22 25);
+    --sidebar-primary: oklch(0.6 0.22 25);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --chart-1: oklch(0.6 0.22 25);
+}
+
+.dark.theme-red {
+    --primary: oklch(0.76 0.18 25);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.76 0.18 25);
+    --sidebar-primary: oklch(0.76 0.18 25);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.76 0.18 25);
+}
+
+:root.theme-rose {
+    --primary: oklch(0.64 0.22 2);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.64 0.22 2);
+    --sidebar-primary: oklch(0.64 0.22 2);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --chart-1: oklch(0.64 0.22 2);
+}
+
+.dark.theme-rose {
+    --primary: oklch(0.78 0.18 2);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.78 0.18 2);
+    --sidebar-primary: oklch(0.78 0.18 2);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.78 0.18 2);
+}
+
+:root.theme-violet {
+    --primary: oklch(0.6 0.2 290);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.6 0.2 290);
+    --sidebar-primary: oklch(0.6 0.2 290);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --chart-1: oklch(0.6 0.2 290);
+}
+
+.dark.theme-violet {
+    --primary: oklch(0.76 0.16 290);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.76 0.16 290);
+    --sidebar-primary: oklch(0.76 0.16 290);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.76 0.16 290);
+}
+
+:root.theme-yellow {
+    --primary: oklch(0.84 0.16 90);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.84 0.16 90);
+    --sidebar-primary: oklch(0.84 0.16 90);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.84 0.16 90);
+}
+
+.dark.theme-yellow {
+    --primary: oklch(0.9 0.14 90);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.9 0.14 90);
+    --sidebar-primary: oklch(0.9 0.14 90);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --chart-1: oklch(0.9 0.14 90);
+}
+
 @layer base {
     * {
         @apply border-border;
@@ -140,4 +266,13 @@
     body {
         @apply bg-background text-foreground;
     }
+}
+
+.scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;
 }
