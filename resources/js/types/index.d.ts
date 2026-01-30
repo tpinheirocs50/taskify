@@ -38,6 +38,7 @@ export interface User {
     address?: string;
     phone?: string;
     appearance?: Record<string, unknown>;
+    profile_photo_path?: string;
     avatar?: string;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;

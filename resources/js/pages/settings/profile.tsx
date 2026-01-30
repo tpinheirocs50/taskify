@@ -29,6 +29,9 @@ export default function Profile({
     status?: string;
 }) {
     const { auth } = usePage<SharedData>().props;
+    const profilePhotoUrl = auth.user.profile_photo_path
+        ? `/storage/${auth.user.profile_photo_path}`
+        : null;
     const missingFields = [
         { key: 'tin', label: 'Tax ID (TIN)', value: auth.user.tin },
         { key: 'address', label: 'Address', value: auth.user.address },
@@ -59,10 +62,46 @@ export default function Profile({
                         options={{
                             preserveScroll: true,
                         }}
+                        encType="multipart/form-data"
                         className="space-y-6"
                     >
                         {({ processing, recentlySuccessful, errors }) => (
                             <>
+                                <div className="grid gap-3">
+                                    <div className="text-sm font-medium">Profile photo</div>
+                                    <div className="flex items-center gap-4">
+                                        {profilePhotoUrl ? (
+                                            <img
+                                                src={profilePhotoUrl}
+                                                alt="Profile"
+                                                className="h-16 w-16 rounded-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="flex h-16 w-16 items-center justify-center rounded-full border text-xs text-muted-foreground">
+                                                No photo
+                                            </div>
+                                        )}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="profile_photo">
+                                                Upload a new photo
+                                            </Label>
+                                            <Input
+                                                id="profile_photo"
+                                                name="profile_photo"
+                                                type="file"
+                                                accept="image/*"
+                                            />
+                                            <InputError
+                                                className="mt-1"
+                                                message={errors.profile_photo}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                JPG, PNG or GIF. Max 2MB.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Name</Label>
 
