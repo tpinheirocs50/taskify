@@ -100,6 +100,14 @@ interface InvoiceStats {
 export default function Invoices() {
     const { auth } = usePage().props as any;
     const currentUserId = auth?.user?.id;
+    const missingProfileFields = [
+        { key: 'tin', label: 'Tax ID (TIN)', value: auth?.user?.tin },
+        { key: 'address', label: 'Address', value: auth?.user?.address },
+        { key: 'phone', label: 'Phone', value: auth?.user?.phone },
+    ].filter((field) => !field.value || String(field.value).trim() === '');
+    const missingProfileFieldsLabel = missingProfileFields
+        .map((field) => field.label)
+        .join(', ');
     const [invoices_list, setInvoices] = useState<Invoice[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | Invoice['status']>(
@@ -322,6 +330,12 @@ export default function Invoices() {
     };
 
     const handleCreateInvoice = async () => {
+        if (missingProfileFields.length > 0) {
+            setAlertMessage(
+                `Please complete your profile before creating invoices. Missing: ${missingProfileFieldsLabel}.`
+            );
+            return;
+        }
         if (selectedTaskIds.length === 0) {
             setAlertMessage('Please select at least one task');
             return;
@@ -591,6 +605,12 @@ export default function Invoices() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Invoices" />
             <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-6">
+                {missingProfileFields.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+                        <span className="font-medium">Action required:</span>{' '}
+                        Please complete your profile before creating invoices. Missing: {missingProfileFieldsLabel}.
+                    </div>
+                )}
                 {/* Header Section */}
                 <div className="flex items-center justify-between">
                     <div className="space-y-2">
@@ -605,6 +625,12 @@ export default function Invoices() {
                         </p>
                     </div>
                     <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+                        if (open && missingProfileFields.length > 0) {
+                            setAlertMessage(
+                                `Please complete your profile before creating invoices. Missing: ${missingProfileFieldsLabel}.`
+                            );
+                            return;
+                        }
                         setIsCreateDialogOpen(open);
                         if (open) {
                             fetchAvailableTasks();
@@ -618,7 +644,7 @@ export default function Invoices() {
                         }
                     }}>
                         <DialogTrigger asChild>
-                            <Button>
+                            <Button disabled={missingProfileFields.length > 0}>
                                 Create Invoice
                             </Button>
                         </DialogTrigger>

@@ -29,6 +29,11 @@ export default function Profile({
     status?: string;
 }) {
     const { auth } = usePage<SharedData>().props;
+    const missingFields = [
+        { key: 'tin', label: 'Tax ID (TIN)', value: auth.user.tin },
+        { key: 'address', label: 'Address', value: auth.user.address },
+        { key: 'phone', label: 'Phone', value: auth.user.phone },
+    ].filter((field) => !field.value || String(field.value).trim() === '');
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -37,6 +42,12 @@ export default function Profile({
             <h1 className="sr-only">Profile Settings</h1>
 
             <SettingsLayout>
+                {missingFields.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+                        <span className="font-medium">Action required:</span>{' '}
+                        Please fill out the remaining profile fields to complete your account: {missingFields.map((field) => field.label).join(', ')}.
+                    </div>
+                )}
                 <div className="space-y-6">
                     <HeadingSmall
                         title="Profile information"
@@ -164,12 +175,12 @@ export default function Profile({
 
                                             {status ===
                                                 'verification-link-sent' && (
-                                                <div className="mt-2 text-sm font-medium text-green-600">
-                                                    A new verification link has
-                                                    been sent to your email
-                                                    address.
-                                                </div>
-                                            )}
+                                                    <div className="mt-2 text-sm font-medium text-green-600">
+                                                        A new verification link has
+                                                        been sent to your email
+                                                        address.
+                                                    </div>
+                                                )}
                                         </div>
                                     )}
 
