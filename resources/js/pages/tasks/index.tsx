@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Send, AlertCircle, CheckCircle2, Clock, Plus } from 'lucide-react';
+import { CheckCircle2, Plus } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -9,9 +9,20 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Select,
     SelectContent,
@@ -22,7 +33,8 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { tasks } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
+import { useAppearance } from '@/hooks/use-appearance';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -51,13 +63,6 @@ interface Task {
     updated_at: string;
 }
 
-interface Comment {
-    id: string;
-    author: string;
-    text: string;
-    date: string;
-    isClient: boolean;
-}
 
 interface PaginationData {
     total: number;
@@ -70,32 +75,132 @@ export default function Tasks() {
     const [tasks_list, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const { auth } = usePage().props as any;
+
     const [newTaskForm, setNewTaskForm] = useState({
         title: '',
         description: '',
         priority: 'medium' as 'low' | 'medium' | 'high',
         due_date: '',
         client_id: '',
-        user_id: '',
+        user_id: auth?.user?.id || '',
         amount: '',
     });
+
+    const [clientsList, setClientsList] = useState<{ id: number; name: string; company?: string }[]>([]);
+
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+    const [editTaskForm, setEditTaskForm] = useState<any>(null);
+    const isDraggingRef = useRef(false);
+    const editDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
+    const createDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
+
+    // Delete confirmation state
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+
     const [pagination, setPagination] = useState<PaginationData>({
         total: 0,
         per_page: 15,
         current_page: 1,
         last_page: 1,
     });
-    const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
-    const [expandedTask, setExpandedTask] = useState<string | null>(null);
 
-    // Mock comments (in a real app, these would come from the backend)
-    const [comments, setComments] = useState<{ [key: number]: Comment[] }>({});
+    // Read appearance color theme (controls --primary CSS variable)
+    const { colorTheme } = useAppearance();
+
+
 
     useEffect(() => {
         fetchTasks();
+        fetchClients();
     }, []);
 
-    const fetchTasks = async (page = 1) => {
+    // Auto-resize edit textarea to fit content but cap at 60vh and ensure a comfortable minimum height
+    useEffect(() => {
+        const el = editDescriptionRef.current;
+        if (!el) return;
+
+        // reset height to get accurate scrollHeight
+        el.style.height = 'auto';
+        const minHeight = 120; // px, ensures readability
+        const maxHeight = window.innerHeight * 0.6; // 60% of viewport
+        const target = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+        el.style.height = `${target}px`;
+    }, [editTaskForm?.description, isEditDialogOpen]);
+
+    // Auto-resize create textarea to fit content but cap at 60vh and ensure a comfortable minimum height
+    useEffect(() => {
+        const el = createDescriptionRef.current;
+        if (!el) return;
+
+        el.style.height = 'auto';
+        const minHeight = 120; // px
+        const maxHeight = window.innerHeight * 0.6;
+        const target = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+        el.style.height = `${target}px`;
+    }, [newTaskForm.description, isCreateDialogOpen]);
+
+    // Confirm deletion of a task (optimistic with undo)
+    const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
+    const [pendingDeleteTimer, setPendingDeleteTimer] = useState<number | null>(null);
+    const [showUndo, setShowUndo] = useState(false);
+
+    const performDeleteNow = async (task: Task) => {
+        try {
+            const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                setDeleteMessage('Task deleted successfully');
+            } else {
+                console.error('Delete failed:', data);
+                // Reinsert task on failure
+                setTasks((prev) => [task, ...prev]);
+                setDeleteMessage(data?.message || 'Failed to delete task');
+            }
+        } catch (err) {
+            console.error('Delete error:', err);
+            setTasks((prev) => [task, ...prev]);
+            setDeleteMessage('Failed to delete task');
+        } finally {
+            setPendingDeleteTask(null);
+            setPendingDeleteTimer(null);
+            setShowUndo(false);
+            setIsDeleting(false);
+        }
+    };
+
+    const handleConfirmDelete = () => {
+        if (!editTaskForm) return;
+        const task = editTaskForm as Task;
+
+        // If there's already a pending delete, flush it immediately
+        if (pendingDeleteTask) {
+            if (pendingDeleteTimer) {
+                clearTimeout(pendingDeleteTimer);
+            }
+            performDeleteNow(pendingDeleteTask);
+        }
+
+        // Optimistically remove from UI
+        setTasks((prev) => prev.filter((t) => t.id !== task.id));
+        setPendingDeleteTask(task);
+        setIsDeleteOpen(false);
+        setIsEditDialogOpen(false);
+        setEditTaskForm(null);
+        setShowUndo(true);
+        setIsDeleting(false);
+
+        // Start undo timer (5s)
+        const timer = window.setTimeout(() => {
+            performDeleteNow(task);
+        }, 5000);
+        setPendingDeleteTimer(timer);
+    };
+
+    const fetchTasks = async (page = 1) => { 
         try {
             const response = await fetch(`/api/tasks?page=${page}`);
             const data = await response.json();
@@ -108,6 +213,16 @@ export default function Tasks() {
         } catch (error) {
             console.error('Error fetching tasks:', error);
             setLoading(false);
+        }
+    };
+
+    const fetchClients = async () => {
+        try {
+            const res = await fetch('/api/clients?page=1');
+            const data = await res.json();
+            if (data.success) setClientsList(data.data);
+        } catch (err) {
+            console.error('Failed to load clients', err);
         }
     };
 
@@ -137,63 +252,105 @@ export default function Tasks() {
         }
     };
 
-    const getProgressPercentage = (status: string): number => {
-        switch (status) {
-            case 'completed':
-                return 100;
-            case 'in_progress':
-                return 65;
-            case 'pending':
-                return 25;
-            default:
-                return 0;
-        }
-    };
 
-    const handleAddComment = (taskId: number) => {
-        const commentText = newComment[taskId];
-        if (!commentText?.trim()) return;
-
-        const newCommentObj: Comment = {
-            id: Date.now().toString(),
-            author: 'Current User',
-            text: commentText,
-            date: new Date().toISOString().split('T')[0],
-            isClient: true,
-        };
-
-        setComments({
-            ...comments,
-            [taskId]: [...(comments[taskId] || []), newCommentObj],
-        });
-
-        setNewComment({ ...newComment, [taskId]: '' });
-    };
 
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Basic client-side validation: ensure client and description
+        if (!newTaskForm.description.trim()) return;
+        if (!newTaskForm.client_id) return;
+
+        const payload = {
+            ...newTaskForm,
+            status: 'pending',
+            starting_date: new Date().toISOString().split('T')[0],
+            user_id: auth?.user?.id,
+        } as any;
+
         try {
             const response = await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newTaskForm),
+                body: JSON.stringify(payload),
             });
 
-            if (response.ok) {
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                // Insert created task into kanban in the pending column
+                setTasks((prev) => [data.data, ...prev]);
+
                 setNewTaskForm({
                     title: '',
                     description: '',
                     priority: 'medium',
                     due_date: '',
                     client_id: '',
-                    user_id: '',
+                    user_id: auth?.user?.id || '',
                     amount: '',
                 });
                 setIsCreateDialogOpen(false);
-                fetchTasks();
+            } else {
+                console.error('Create failed:', data);
             }
         } catch (error) {
             console.error('Error creating task:', error);
+        }
+    };
+
+    const handleOpenEdit = (task: Task) => {
+        // populate edit form
+        setEditTaskForm({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            priority: task.priority,
+            due_date: task.due_date,
+            client_id: String(task.client_id),
+            user_id: String(task.user_id),
+            amount: task.amount ? String(task.amount) : '',
+            status: task.status,
+        });
+        // ensure clients list is loaded
+        fetchClients();
+        setIsEditDialogOpen(true);
+    };
+
+    const handleEditSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editTaskForm) return;
+
+        // basic validation
+        if (!editTaskForm.description?.trim()) return;
+
+        const payload: any = {
+            title: editTaskForm.title,
+            description: editTaskForm.description,
+            priority: editTaskForm.priority,
+            due_date: editTaskForm.due_date,
+            client_id: editTaskForm.client_id,
+            amount: editTaskForm.amount || null,
+            status: editTaskForm.status,
+        };
+
+        try {
+            const res = await fetch(`/api/tasks/${editTaskForm.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                // update local list
+                setTasks((prev) => prev.map((t) => (t.id === data.data.id ? data.data : t)));
+                setIsEditDialogOpen(false);
+                setEditTaskForm(null);
+            } else {
+                console.error('Edit failed:', data);
+            }
+        } catch (err) {
+            console.error('Failed to update task', err);
         }
     };
 
@@ -215,14 +372,27 @@ export default function Tasks() {
                             Track project progress and collaborate with your team
                         </p>
                     </div>
-                    <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                    <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+                        setIsCreateDialogOpen(open);
+                        if (open) {
+                            fetchClients();
+                            setNewTaskForm({
+                                title: '',
+                                description: '',
+                                priority: 'medium',
+                                due_date: '',
+                                client_id: '',
+                                user_id: auth?.user?.id || '',
+                                amount: '',
+                            });
+                        }
+                    }}>
                         <DialogTrigger asChild>
-                            <Button className="gap-2">
-                                <Plus size={16} />
+                            <Button>
                                 Create Task
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-md">
+                        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                                 <DialogTitle>Create New Task</DialogTitle>
                                 <DialogDescription>
@@ -245,17 +415,42 @@ export default function Tasks() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-sm font-medium">Description</label>
-                                    <Input
-                                        placeholder="Task description"
+                                    <label className="text-sm font-medium">Description *</label>
+                                    <Textarea
+                                        required
+                                        rows={4}
+                                        ref={createDescriptionRef}
+                                        className="min-h-[120px] max-h-[60vh] overflow-auto resize-y text-sm leading-relaxed p-2"
+                                        placeholder="Describe the task in detail (what, why, acceptance criteria)..."
                                         value={newTaskForm.description}
-                                        onChange={(e) =>
+                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                                             setNewTaskForm({
                                                 ...newTaskForm,
                                                 description: e.target.value,
                                             })
                                         }
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="text-sm font-medium">Client *</label>
+                                    <Select
+                                        value={String(newTaskForm.client_id)}
+                                        onValueChange={(value) =>
+                                            setNewTaskForm({ ...newTaskForm, client_id: value })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {clientsList.map((c) => (
+                                                <SelectItem key={c.id} value={String(c.id)}>
+                                                    {c.name} {c.company ? `(${c.company})` : ''}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium">Priority</label>
@@ -319,14 +514,202 @@ export default function Tasks() {
                             </form>
                         </DialogContent>
                     </Dialog>
-                </div>
+
+                    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle>Edit Task</DialogTitle>
+                                <DialogDescription>Update task details and move between states</DialogDescription>
+                            </DialogHeader>
+
+                            {editTaskForm && (
+                                <form onSubmit={handleEditSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="text-sm font-medium">Title *</label>
+                                        <Input
+                                            required
+                                            value={editTaskForm.title}
+                                            onChange={(e) => setEditTaskForm({ ...editTaskForm, title: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium">Description *</label>
+                                        <Textarea
+                                            required
+                                            rows={4}
+                                            ref={editDescriptionRef}
+                                            className="min-h-[120px] max-h-[60vh] overflow-auto resize-y text-sm leading-relaxed p-2"
+                                            placeholder="Describe the task in detail (what, why, acceptance criteria)..."
+                                            value={editTaskForm.description}
+                                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditTaskForm({ ...editTaskForm, description: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium">Priority</label>
+                                        <Select
+                                            value={editTaskForm.priority}
+                                            onValueChange={(value) => setEditTaskForm({ ...editTaskForm, priority: value as 'low' | 'medium' | 'high' })}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="low">Low</SelectItem>
+                                                <SelectItem value="medium">Medium</SelectItem>
+                                                <SelectItem value="high">High</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium">Client *</label>
+                                        <Select
+                                            value={String(editTaskForm.client_id)}
+                                            onValueChange={(value) => setEditTaskForm({ ...editTaskForm, client_id: value })}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {clientsList.map((c) => (
+                                                    <SelectItem key={c.id} value={String(c.id)}>
+                                                        {c.name} {c.company ? `(${c.company})` : ''}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+
+
+                                    <div>
+                                        <label className="text-sm font-medium">Due Date</label>
+                                        <Input
+                                            type="date"
+                                            value={editTaskForm.due_date}
+                                            onChange={(e) => setEditTaskForm({ ...editTaskForm, due_date: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium">Amount</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={editTaskForm.amount}
+                                            onChange={(e) => setEditTaskForm({ ...editTaskForm, amount: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium">Status</label>
+                                        <Select
+                                            value={editTaskForm.status}
+                                            onValueChange={(value) => setEditTaskForm({ ...editTaskForm, status: value as Task['status'] })}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="pending">Pending</SelectItem>
+                                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                                <SelectItem value="completed">Completed</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2">
+                                        <div>
+                                            <Button type="button" variant="destructive" onClick={() => setIsDeleteOpen(true)}>
+                                                Delete
+                                            </Button>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setEditTaskForm(null); }}>
+                                                Cancel
+                                            </Button>
+                                            <Button type="submit">Save</Button>
+                                        </div>
+                                    </div>
+                                </form>
+                            )}
+                        </DialogContent>
+                    </Dialog>
+                    {/* Delete Confirmation */}
+                    <AlertDialog open={isDeleteOpen} onOpenChange={(open: boolean) => !open && setIsDeleteOpen(false)}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Task</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Are you sure you want to delete this task? This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                    onClick={handleConfirmDelete}
+                                    disabled={isDeleting}
+                                    className="bg-red-600 hover:bg-red-700"
+                                >
+                                    {isDeleting ? 'Deleting...' : 'Delete'}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
+                    {/* Undo snackbar */}
+                    {showUndo && pendingDeleteTask && (
+                        <div className="fixed left-6 bottom-6 z-50">
+                            <div className="flex items-center gap-4 rounded-md border border-gray-200 bg-white px-4 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
+                                <div className="text-sm text-gray-800 dark:text-gray-100">Task deleted</div>
+                                <div className="flex items-center gap-2">
+                                    <Button variant="link" onClick={() => {
+                                        // undo delete
+                                        if (pendingDeleteTimer) {
+                                            clearTimeout(pendingDeleteTimer);
+                                        }
+                                        setTasks((prev) => [pendingDeleteTask, ...prev]);
+                                        setPendingDeleteTask(null);
+                                        setShowUndo(false);
+                                        setDeleteMessage('Deletion undone');
+                                    }}>
+                                        Undo
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => {
+                                        // dismiss snackbar (will still execute delete after timeout)
+                                        setShowUndo(false);
+                                    }}>
+                                        Dismiss
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Post-action Message Dialog */}
+                    <AlertDialog open={deleteMessage !== null} onOpenChange={(open: boolean) => !open && setDeleteMessage(null)}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Message</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    {deleteMessage}
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogAction onClick={() => setDeleteMessage(null)}>
+                                    OK
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>                </div>
 
                 {/* Tasks List */}
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
-                        <div className="text-gray-500 dark:text-gray-400">
-                            Loading tasks...
-                        </div>
+                        <div className="text-gray-500 dark:text-gray-400">Loading tasks...</div>
                     </div>
                 ) : tasks_list.length === 0 ? (
                     <motion.div
@@ -336,197 +719,115 @@ export default function Tasks() {
                     >
                         <CheckCircle2 className="mb-4 h-12 w-12 text-gray-400" />
                         <div className="text-center">
-                            <p className="font-medium text-gray-900 dark:text-white">
-                                No tasks found
-                            </p>
+                            <p className="font-medium text-gray-900 dark:text-white">No tasks found</p>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
                                 Start by creating your first task
                             </p>
                         </div>
                     </motion.div>
                 ) : (
-                    <div className="space-y-4">
-                        {tasks_list.map((task, index) => (
-                            <motion.div
-                                key={task.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.4, delay: index * 0.1 }}
-                                className="overflow-hidden rounded-2xl border border-gray-200 bg-white transition-shadow hover:shadow-lg dark:border-gray-800 dark:bg-gray-900"
-                            >
-                                {/* Task Header */}
-                                <div className="p-6">
-                                    <div className="mb-4 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-                                        <div className="flex-1">
-                                            <div className="mb-2 flex flex-wrap items-center gap-3">
-                                                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                                    {task.title}
-                                                </h3>
-                                                <span
-                                                    className={`rounded-full px-3 py-1 text-xs capitalize ${getStatusColor(task.status)}`}
-                                                >
-                                                    {task.status.replace('_', ' ')}
-                                                </span>
-                                                <span
-                                                    className={`rounded-full px-3 py-1 text-xs capitalize ${getPriorityColor(task.priority)}`}
-                                                >
-                                                    {task.priority}
-                                                </span>
-                                            </div>
-                                            <p className="mb-3 text-gray-600 dark:text-gray-400">
-                                                {task.description}
-                                            </p>
-                                            <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                                                <p>
-                                                    <span className="font-medium">Client:</span>{' '}
-                                                    {task.client_name} ({task.client_company})
-                                                </p>
-                                                <p>
-                                                    <span className="font-medium">Assigned to:</span>{' '}
-                                                    {task.user_name}
-                                                </p>
-                                                <p>
-                                                    <span className="font-medium">Due:</span>{' '}
-                                                    {formatDate(task.due_date)}
-                                                </p>
-                                                {task.amount && (
-                                                    <p>
-                                                        <span className="font-medium">Amount:</span> €
-                                                        {Number(task.amount).toFixed(2)}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Progress Bar */}
-                                    <div className="mb-4">
-                                        <div className="mb-2 flex items-center justify-between">
-                                            <span className="text-sm text-gray-600 dark:text-gray-400">
-                                                Progress
-                                            </span>
-                                            <span className="text-sm text-gray-900 dark:text-white">
-                                                {getProgressPercentage(task.status)}%
-                                            </span>
-                                        </div>
-                                        <div className="overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800 h-2">
-                                            <motion.div
-                                                initial={{ width: 0 }}
-                                                animate={{
-                                                    width: `${getProgressPercentage(task.status)}%`,
-                                                }}
-                                                transition={{ duration: 0.6, delay: 0.2 }}
-                                                className="h-full bg-gradient-to-r from-blue-500 to-purple-600"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Comments Toggle */}
-                                    <button
-                                        onClick={() =>
-                                            setExpandedTask(
-                                                expandedTask === task.id.toString()
-                                                    ? null
-                                                    : task.id.toString(),
-                                            )
-                                        }
-                                        className="flex items-center gap-2 text-blue-600 hover:underline dark:text-blue-400"
-                                    >
-                                        <MessageSquare size={16} />
-                                        <span>
-                                            {comments[task.id]?.length || 0} Comments
-                                        </span>
-                                    </button>
+                    <div className="rounded-2xl p-4">
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                            {/* Kanban columns */}
+                            {[
+                                { id: 'pending', title: 'Pending' },
+                                { id: 'in_progress', title: 'In Progress' },
+                                { id: 'completed', title: 'Completed' },
+                            ].map((col) => (
+                                <div
+                                    key={col.id}
+                                    className="min-h-[220px] rounded-lg border border-sidebar-border bg-transparent p-3"
+                                >
+                                <div className="mb-4 flex items-center justify-between">
+                                    <h3 className="text-lg font-semibold capitalize text-sidebar-foreground">
+                                        {col.title}
+                                    </h3>
+                                    <span className="text-sm text-sidebar-foreground/70">
+                                        {tasks_list.filter((t) => t.status === col.id).length}
+                                    </span>
                                 </div>
 
-                                {/* Comments Section */}
-                                {expandedTask === task.id.toString() && (
-                                    <motion.div
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        exit={{ opacity: 0, height: 0 }}
-                                        className="border-t border-gray-200 bg-gray-50 p-6 dark:border-gray-800 dark:bg-gray-800"
-                                    >
-                                        <h4 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-                                            Comments & Feedback
-                                        </h4>
+                                <div
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e: React.DragEvent<HTMLDivElement>) => {
+                                        const idStr = e.dataTransfer.getData('text/plain');
+                                        if (!idStr) return;
+                                        const id = Number(idStr);
+                                        const task = tasks_list.find((t) => t.id === id);
+                                        if (!task || task.status === col.id) return;
 
-                                        {/* Comments List */}
-                                        <div className="mb-4 space-y-4">
-                                            {!comments[task.id] || comments[task.id].length === 0 ? (
-                                                <p className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                                                    No comments yet. Be the first to add feedback!
-                                                </p>
-                                            ) : (
-                                                comments[task.id].map((comment) => (
-                                                    <div
-                                                        key={comment.id}
-                                                        className={`rounded-lg p-4 ${
-                                                            comment.isClient
-                                                                ? 'border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30'
-                                                                : 'border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'
-                                                        }`}
-                                                    >
-                                                        <div className="mb-2 flex items-center gap-3">
-                                                            <div
-                                                                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm text-white ${
-                                                                    comment.isClient
-                                                                        ? 'bg-gradient-to-br from-green-500 to-emerald-600'
-                                                                        : 'bg-gradient-to-br from-blue-500 to-purple-600'
-                                                                }`}
-                                                            >
-                                                                {comment.author
-                                                                    .split(' ')
-                                                                    .map((n) => n[0])
-                                                                    .join('')}
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-sm text-gray-900 dark:text-white">
-                                                                    {comment.author}
-                                                                </p>
-                                                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                                    {comment.date}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-gray-700 dark:text-gray-300">
-                                                            {comment.text}
-                                                        </p>
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
+                                        // Optimistic update
+                                        setTasks((prev) =>
+                                            prev.map((t) => (t.id === id ? { ...t, status: col.id as Task['status'] } : t)),
+                                        );
 
-                                        {/* Add Comment Form */}
-                                        <div className="flex gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder="Add a comment or observation..."
-                                                value={newComment[task.id] || ''}
-                                                onChange={(e) =>
-                                                    setNewComment({
-                                                        ...newComment,
-                                                        [task.id]: e.target.value,
-                                                    })
-                                                }
-                                                onKeyPress={(e) =>
-                                                    e.key === 'Enter' &&
-                                                    handleAddComment(task.id)
-                                                }
-                                                className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                                            />
-                                            <button
-                                                onClick={() => handleAddComment(task.id)}
-                                                className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-3 text-white transition-all hover:shadow-lg"
+                                        // Persist change
+                                        fetch(`/api/tasks/${id}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ status: col.id }),
+                                        }).then((res) => {
+                                            if (!res.ok) fetchTasks();
+                                        }).catch(() => fetchTasks());
+                                    }}
+                                    className="flex min-h-[120px] flex-col gap-2"
+                                >
+                                    {tasks_list
+                                        .filter((t) => t.status === col.id)
+                                        .map((task, index) => (
+                                            <motion.div
+                                                key={task.id}
+                                                initial={{ opacity: 0, y: 12 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ duration: 0.3, delay: index * 0.03 }}
+                                                className="cursor-grab active:cursor-grabbing select-none"
                                             >
-                                                <Send size={20} />
-                                                Send
-                                            </button>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </motion.div>
+                                                <div
+                                                    draggable
+                                                    onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
+                                                        isDraggingRef.current = true;
+                                                        e.dataTransfer.setData('text/plain', String(task.id));
+                                                        e.dataTransfer.effectAllowed = 'move';
+                                                    }}
+                                                    onDragEnd={() => {
+                                                        // small delay to avoid click firing immediately after drag
+                                                        setTimeout(() => {
+                                                            isDraggingRef.current = false;
+                                                        }, 50);
+                                                    }}
+                                                    onClick={() => {
+                                                        if (!isDraggingRef.current) handleOpenEdit(task);
+                                                    }}
+                                                >                                                    <Card className="overflow-hidden p-3 transform transition-all hover:-translate-y-1 hover:shadow-md bg-white dark:bg-gray-900" style={{ borderLeft: '4px solid var(--primary)' }}>
+                                                        <CardContent>
+                                                            <div className="mb-1">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate whitespace-nowrap" title={task.title}>
+                                                                            {task.title}
+                                                                        </h4> 
+                                                                    </div>
+                                                                    <span className={`rounded-full px-3 py-1 text-xs capitalize ${getPriorityColor(task.priority)}`}>
+                                                                        {task.priority}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                                                                    <div className="truncate">{task.client_name}</div>
+                                                                    <div className="ml-2 whitespace-nowrap">Due {formatDate(task.due_date)}</div>
+                                                                </div>
+                                                            </div>
+
+
+                                                        </CardContent>
+                                                    </Card>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                </div>
+                            </div>
                         ))}
+                        </div>
                     </div>
                 )}
 
