@@ -128,29 +128,32 @@ export default function Dashboard() {
                 });
 
                 // Calculate monthly revenue (last 6 months) - only from completed tasks
+                const today = new Date();
                 const revenueByMonth: { [key: string]: number } = {};
+
+                // Initialize last 6 months in correct order
+                for (let i = 5; i >= 0; i--) {
+                    const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    revenueByMonth[monthKey] = 0;
+                }
+
+                // Populate with actual task data
                 userTasks
                     .filter((task) => task.status === 'completed')
                     .forEach((task) => {
                         const date = new Date(task.due_date);
-                        const monthKey = date.toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                        });
-                        revenueByMonth[monthKey] =
-                            (revenueByMonth[monthKey] || 0) +
-                            (Number(task.amount) || 0);
+                        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                        if (revenueByMonth.hasOwnProperty(monthKey)) {
+                            revenueByMonth[monthKey] += Number(task.amount) || 0;
+                        }
                     });
 
-                // Get last 6 months
+                // Build months array with correct order
                 const months: MonthlyRevenue[] = [];
                 for (let i = 5; i >= 0; i--) {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() - i);
-                    const monthKey = date.toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                    });
+                    const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                     months.push({
                         month: date.toLocaleDateString('en-US', {
                             month: 'short',
