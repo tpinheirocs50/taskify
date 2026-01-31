@@ -7,6 +7,8 @@ import {
 } from '@/components/ui/card';
 import {
     ChartContainer,
+    ChartLegend,
+    ChartLegendContent,
     ChartTooltip,
     ChartTooltipContent,
     type ChartConfig,
@@ -49,6 +51,7 @@ interface Task {
     due_date: string;
     amount: number | null;
     user_id: number;
+    invoice_id?: number | null;
     user_name: string;
     client_name: string;
     client_company: string | null;
@@ -57,13 +60,15 @@ interface Task {
 
 interface DashboardStats {
     totalRevenue: number;
+    totalExpectedRevenue: number;
     openTasks: number;
     allTasks: number;
 }
 
 interface MonthlyRevenue {
     month: string;
-    revenue: number;
+    totalRevenue: number;
+    expectedRevenue: number;
 }
 
 export default function Dashboard() {
@@ -71,6 +76,7 @@ export default function Dashboard() {
     const currentUserId = auth?.user?.id;
     const [stats, setStats] = useState<DashboardStats>({
         totalRevenue: 0,
+        totalExpectedRevenue: 0,
         openTasks: 0,
         allTasks: 0,
     });
@@ -78,9 +84,13 @@ export default function Dashboard() {
     const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
     const [loading, setLoading] = useState(true);
     const chartConfig = {
-        revenue: {
-            label: 'Revenue',
+        totalRevenue: {
+            label: 'Total Revenue',
             color: 'var(--primary)',
+        },
+        expectedRevenue: {
+            label: 'Total Expected Revenue',
+            color: 'var(--muted-foreground)',
         },
     } satisfies ChartConfig;
 
@@ -111,43 +121,104 @@ export default function Dashboard() {
                     (task) => task.user_id === currentUserId,
                 );
                 setTasks(userTasks);
-                const totalRevenue = userTasks
-                    .filter((task) => task.status === 'completed')
-                    .reduce(
-                        (sum, task) => sum + (Number(task.amount) || 0),
-                        0,
-                    );
                 const openTasks = userTasks.filter(
                     (task) => task.status !== 'completed',
                 ).length;
 
+                // Fetch invoices to calculate monthly revenue from paid invoices
+                let allInvoices: any[] = [];
+                let invoicePage = 1;
+                let invoiceLastPage = 1;
+
+                do {
+                    const response = await fetch(`/api/invoices?page=${invoicePage}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        allInvoices = [...allInvoices, ...data.data];
+                        invoiceLastPage = data.pagination.last_page;
+                        invoicePage++;
+                    } else {
+                        break;
+                    }
+                } while (invoicePage <= invoiceLastPage);
+
+                const userInvoiceIds = new Set(
+                    userTasks
+                        .filter((task) => task.invoice_id !== null)
+                        .map((task) => task.invoice_id),
+                );
+
+                const paidInvoices = allInvoices
+                    .filter((invoice) => userInvoiceIds.has(invoice.id))
+                    .filter((invoice) => invoice.status === 'paid');
+
+                const expectedInvoices = allInvoices
+                    .filter((invoice) => userInvoiceIds.has(invoice.id))
+                    .filter((invoice) => invoice.status !== 'cancelled');
+
+                const invoiceTotalsById = new Map<number, number>();
+                userTasks.forEach((task) => {
+                    if (!task.invoice_id) return;
+                    const current = invoiceTotalsById.get(task.invoice_id) || 0;
+                    invoiceTotalsById.set(
+                        task.invoice_id,
+                        current + (Number(task.amount) || 0),
+                    );
+                });
+
+                const totalRevenue = paidInvoices.reduce((sum, invoice) => {
+                    return sum + (invoiceTotalsById.get(invoice.id) || 0);
+                }, 0);
+
+                const totalExpectedRevenue = allInvoices
+                    .filter((invoice) => userInvoiceIds.has(invoice.id))
+                    .filter((invoice) => invoice.status !== 'cancelled')
+                    .reduce((sum, invoice) => {
+                        return sum + (invoiceTotalsById.get(invoice.id) || 0);
+                    }, 0);
+
                 setStats({
                     totalRevenue,
+                    totalExpectedRevenue,
                     openTasks,
                     allTasks: userTasks.length,
                 });
 
-                // Calculate monthly revenue (last 6 months) - only from completed tasks
+                // Calculate monthly revenue (last 6 months)
                 const today = new Date();
-                const revenueByMonth: { [key: string]: number } = {};
+                const paidByMonth: { [key: string]: number } = {};
+                const expectedByMonth: { [key: string]: number } = {};
 
                 // Initialize last 6 months in correct order
                 for (let i = 5; i >= 0; i--) {
                     const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
                     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                    revenueByMonth[monthKey] = 0;
+                    paidByMonth[monthKey] = 0;
+                    expectedByMonth[monthKey] = 0;
                 }
 
-                // Populate with actual task data
-                userTasks
-                    .filter((task) => task.status === 'completed')
-                    .forEach((task) => {
-                        const date = new Date(task.due_date);
-                        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                        if (revenueByMonth.hasOwnProperty(monthKey)) {
-                            revenueByMonth[monthKey] += Number(task.amount) || 0;
-                        }
-                    });
+                paidInvoices.forEach((invoice) => {
+                    const dateValue = invoice.due_date || invoice.date;
+                    if (!dateValue) return;
+                    const date = new Date(dateValue);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    if (paidByMonth.hasOwnProperty(monthKey)) {
+                        paidByMonth[monthKey] +=
+                            invoiceTotalsById.get(invoice.id) || 0;
+                    }
+                });
+
+                expectedInvoices.forEach((invoice) => {
+                    const dateValue = invoice.due_date || invoice.date;
+                    if (!dateValue) return;
+                    const date = new Date(dateValue);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    if (expectedByMonth.hasOwnProperty(monthKey)) {
+                        expectedByMonth[monthKey] +=
+                            invoiceTotalsById.get(invoice.id) || 0;
+                    }
+                });
 
                 // Build months array with correct order
                 const months: MonthlyRevenue[] = [];
@@ -158,7 +229,8 @@ export default function Dashboard() {
                         month: date.toLocaleDateString('en-US', {
                             month: 'short',
                         }),
-                        revenue: revenueByMonth[monthKey] || 0,
+                        totalRevenue: paidByMonth[monthKey] || 0,
+                        expectedRevenue: expectedByMonth[monthKey] || 0,
                     });
                 }
                 setMonthlyRevenue(months);
@@ -215,7 +287,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                     {/* Total Revenue Card */}
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -233,7 +305,29 @@ export default function Dashboard() {
                                 €
                             </div>
                             <p className="text-muted-foreground text-xs">
-                                From all completed tasks
+                                From paid invoices
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    {/* Total Expected Revenue Card */}
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium">
+                                Total Expected Revenue
+                            </CardTitle>
+                            <CircleDollarSign className="text-muted-foreground h-4 w-4" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                {stats.totalExpectedRevenue.toLocaleString('pt-PT', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0,
+                                })}{' '}
+                                €
+                            </div>
+                            <p className="text-muted-foreground text-xs">
+                                All invoices except cancelled
                             </p>
                         </CardContent>
                     </Card>
@@ -296,7 +390,7 @@ export default function Dashboard() {
                                 >
                                     <defs>
                                         <linearGradient
-                                            id="fillRevenue"
+                                            id="fillTotalRevenue"
                                             x1="0"
                                             y1="0"
                                             x2="0"
@@ -304,17 +398,35 @@ export default function Dashboard() {
                                         >
                                             <stop
                                                 offset="5%"
-                                                stopColor="var(--color-revenue)"
-                                                stopOpacity={0.3}
+                                                stopColor="var(--color-totalRevenue)"
+                                                stopOpacity={0.35}
                                             />
                                             <stop
                                                 offset="95%"
-                                                stopColor="var(--color-revenue)"
+                                                stopColor="var(--color-totalRevenue)"
+                                                stopOpacity={0}
+                                            />
+                                        </linearGradient>
+                                        <linearGradient
+                                            id="fillExpectedRevenue"
+                                            x1="0"
+                                            y1="0"
+                                            x2="0"
+                                            y2="1"
+                                        >
+                                            <stop
+                                                offset="5%"
+                                                stopColor="var(--color-expectedRevenue)"
+                                                stopOpacity={0.25}
+                                            />
+                                            <stop
+                                                offset="95%"
+                                                stopColor="var(--color-expectedRevenue)"
                                                 stopOpacity={0}
                                             />
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid vertical={false} />
+                                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
                                     <XAxis
                                         dataKey="month"
                                         tickLine={false}
@@ -325,15 +437,27 @@ export default function Dashboard() {
                                         tickLine={false}
                                         axisLine={false}
                                         tickMargin={8}
+                                        tickFormatter={(value) =>
+                                            value.toLocaleString('pt-PT')
+                                        }
                                     />
                                     <ChartTooltip content={<ChartTooltipContent />} />
+                                    <ChartLegend content={<ChartLegendContent />} />
                                     <Area
                                         type="monotone"
-                                        dataKey="revenue"
-                                        name="Revenue"
-                                        stroke="var(--color-revenue)"
-                                        fillOpacity={1}
-                                        fill="url(#fillRevenue)"
+                                        dataKey="expectedRevenue"
+                                        name="Total Expected Revenue"
+                                        stroke="var(--color-expectedRevenue)"
+                                        fill="url(#fillExpectedRevenue)"
+                                        strokeWidth={2}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="totalRevenue"
+                                        name="Total Revenue"
+                                        stroke="var(--color-totalRevenue)"
+                                        fill="url(#fillTotalRevenue)"
+                                        strokeWidth={2}
                                     />
                                 </AreaChart>
                             </ChartContainer>
