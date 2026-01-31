@@ -527,7 +527,6 @@ export default function Dashboard() {
                                     <TableRow>
                                         <TableHead>Task</TableHead>
                                         <TableHead>Client</TableHead>
-                                        <TableHead>Assigned To</TableHead>
                                         <TableHead>Priority</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Due Date</TableHead>
@@ -551,9 +550,6 @@ export default function Dashboard() {
                                                 </div>
                                             </TableCell>
                                             <TableCell>
-                                                {task.user_name}
-                                            </TableCell>
-                                            <TableCell>
                                                 <span
                                                     className={`capitalize ${getPriorityColor(task.priority)}`}
                                                 >
@@ -573,7 +569,7 @@ export default function Dashboard() {
                                             <TableCell>
                                                 {new Date(
                                                     task.due_date,
-                                                ).toLocaleDateString()}
+                                                ).toLocaleDateString('pt-PT')}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 {task.amount

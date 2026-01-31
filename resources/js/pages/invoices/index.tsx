@@ -49,7 +49,11 @@ import { invoices } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
-import { FileText } from 'lucide-react';
+import {
+    Calendar,
+    CircleDollarSign,
+    FileText,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -715,38 +719,42 @@ export default function Invoices() {
                                             {availableTasks.map((task) => (
                                                 <div
                                                     key={task.id}
-                                                    className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                                                    className="flex items-start gap-3 p-4 rounded-lg border hover:bg-accent/50 transition-colors bg-muted/30"
                                                 >
                                                     <Checkbox
                                                         id={`task-${task.id}`}
                                                         checked={selectedTaskIds.includes(task.id)}
                                                         onCheckedChange={() => toggleTaskSelection(task.id)}
+                                                        className="mt-1"
                                                     />
-                                                    <Label
-                                                        htmlFor={`task-${task.id}`}
-                                                        className="flex-1 cursor-pointer space-y-1"
-                                                    >
-                                                        <div className="font-medium">{task.title}</div>
-                                                        <div className="text-sm text-muted-foreground">
+                                                    <div className="flex-1 space-y-2">
+                                                        <div>
+                                                            <div className="font-semibold text-sm">{task.title}</div>
                                                             {task.client_company && (
-                                                                <span>{task.client_company} • </span>
-                                                            )}
-                                                            <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
-                                                            {task.amount && (
-                                                                <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    {task.client_company}
+                                                                </div>
                                                             )}
                                                         </div>
-                                                    </Label>
+                                                        <div className="flex flex-wrap gap-4 pt-2 text-xs text-muted-foreground">
+                                                            <div className="flex items-center gap-1">
+                                                                <Calendar className="h-3 w-3" />
+                                                                {new Date(task.due_date).toLocaleDateString('pt-PT')}
+                                                            </div>
+                                                            {task.amount && (
+                                                                <div className="flex items-center gap-1">
+                                                                    <CircleDollarSign className="h-3 w-3" />
+                                                                    {Number(task.amount).toFixed(2)} €
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
                                         {selectedTaskIds.length > 0 && (
                                             <div className="text-sm text-muted-foreground">
-                                                Total amount: $
-                                                {availableTasks
-                                                    .filter((task) => selectedTaskIds.includes(task.id))
-                                                    .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
-                                                    .toFixed(2)}
+                                                Total amount: {availableTasks.filter((task) => selectedTaskIds.includes(task.id)).reduce((sum, task) => sum + (Number(task.amount) || 0), 0).toFixed(2)} €
                                             </div>
                                         )}
                                     </div>
@@ -1117,7 +1125,7 @@ export default function Invoices() {
                                                         )}
                                                         <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
                                                         {task.amount && (
-                                                            <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                            <span> • {Number(task.amount).toFixed(2)} €</span>
                                                         )}
                                                     </div>
                                                 </div>
@@ -1134,10 +1142,7 @@ export default function Invoices() {
                                     </div>
                                 )}
                                 <div className="text-sm text-muted-foreground">
-                                    Total: $
-                                    {invoiceTasks
-                                        .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
-                                        .toFixed(2)}
+                                    Total: {invoiceTasks.reduce((sum, task) => sum + (Number(task.amount) || 0), 0).toFixed(2)} €
                                 </div>
                             </div>
 
@@ -1149,38 +1154,47 @@ export default function Invoices() {
                                         {availableTasks.map((task) => (
                                             <div
                                                 key={task.id}
-                                                className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                                                className="flex items-start gap-3 p-4 rounded-lg border hover:bg-accent/50 transition-colors bg-muted/30"
                                             >
                                                 <Checkbox
                                                     id={`edit-task-${task.id}`}
                                                     checked={selectedTaskIds.includes(task.id)}
                                                     onCheckedChange={() => toggleTaskSelection(task.id)}
+                                                    className="mt-1"
                                                 />
-                                                <Label
-                                                    htmlFor={`edit-task-${task.id}`}
-                                                    className="flex-1 cursor-pointer space-y-1"
-                                                >
-                                                    <div className="font-medium">{task.title}</div>
-                                                    <div className="text-sm text-muted-foreground">
+                                                <div className="flex-1 space-y-2">
+                                                    <div>
+                                                        <div className="font-semibold text-sm">{task.title}</div>
                                                         {task.client_company && (
-                                                            <span>{task.client_company} • </span>
-                                                        )}
-                                                        <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
-                                                        {task.amount && (
-                                                            <span> • ${Number(task.amount).toFixed(2)}</span>
+                                                            <div className="text-xs text-muted-foreground">
+                                                                {task.client_company}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                </Label>
+                                                    <div className="flex flex-wrap gap-4 pt-2 text-xs text-muted-foreground">
+                                                        <div className="flex items-center gap-1">
+                                                            <Calendar className="h-3 w-3" />
+                                                            {new Date(task.due_date).toLocaleDateString('pt-PT')}
+                                                        </div>
+                                                        {task.amount && (
+                                                            <div className="flex items-center gap-1">
+                                                                <CircleDollarSign className="h-3 w-3" />
+                                                                {Number(task.amount).toFixed(2)} €
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                     {selectedTaskIds.length > 0 && (
                                         <div className="text-sm text-muted-foreground">
-                                            Adding: $
+                                            Adding:
                                             {availableTasks
                                                 .filter((task) => selectedTaskIds.includes(task.id))
                                                 .reduce((sum, task) => sum + (Number(task.amount) || 0), 0)
                                                 .toFixed(2)}
+                                            €
                                         </div>
                                     )}
                                 </div>
