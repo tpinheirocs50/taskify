@@ -29,6 +29,7 @@ class ProfileUpdateRequest extends FormRequest
             'tin' => ['nullable', 'string', 'max:20'],
             'address' => ['nullable', 'string', 'max:500'],
             'phone' => ['nullable', 'string', 'max:20'],
+            'profile_photo' => ['nullable', 'image', 'max:2048'],
         ];
     }
 }
