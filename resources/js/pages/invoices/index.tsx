@@ -201,7 +201,7 @@ export default function Invoices() {
             } while (currentPage <= lastPage);
 
             const tasks = allTasks.filter(
-                (task) => task.invoice_id === invoiceId
+                (task) => task.invoice_id === invoiceId && task.status === 'completed'
             );
             setInvoiceTasks(tasks);
         } catch (error) {
@@ -231,7 +231,9 @@ export default function Invoices() {
 
             // Filter tasks: current user's tasks without invoice
             const userAvailableTasks = allTasks.filter(
-                (task) => task.user_id === currentUserId && task.invoice_id === null
+                (task) => task.user_id === currentUserId &&
+                    task.invoice_id === null &&
+                    task.status === 'completed'
             );
 
             setAvailableTasks(userAvailableTasks);
