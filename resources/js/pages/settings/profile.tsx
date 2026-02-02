@@ -29,6 +29,14 @@ export default function Profile({
     status?: string;
 }) {
     const { auth } = usePage<SharedData>().props;
+    const profilePhotoUrl = auth.user.profile_photo_path
+        ? `/storage/${auth.user.profile_photo_path}`
+        : null;
+    const missingFields = [
+        { key: 'tin', label: 'Tax ID (TIN)', value: auth.user.tin },
+        { key: 'address', label: 'Address', value: auth.user.address },
+        { key: 'phone', label: 'Phone', value: auth.user.phone },
+    ].filter((field) => !field.value || String(field.value).trim() === '');
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -37,6 +45,12 @@ export default function Profile({
             <h1 className="sr-only">Profile Settings</h1>
 
             <SettingsLayout>
+                {missingFields.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+                        <span className="font-medium">Action required:</span>{' '}
+                        Please fill out the remaining profile fields to complete your account: {missingFields.map((field) => field.label).join(', ')}.
+                    </div>
+                )}
                 <div className="space-y-6">
                     <HeadingSmall
                         title="Profile information"
@@ -48,10 +62,46 @@ export default function Profile({
                         options={{
                             preserveScroll: true,
                         }}
+                        encType="multipart/form-data"
                         className="space-y-6"
                     >
                         {({ processing, recentlySuccessful, errors }) => (
                             <>
+                                <div className="grid gap-3">
+                                    <div className="text-sm font-medium">Profile photo</div>
+                                    <div className="flex items-center gap-4">
+                                        {profilePhotoUrl ? (
+                                            <img
+                                                src={profilePhotoUrl}
+                                                alt="Profile"
+                                                className="h-16 w-16 rounded-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="flex h-16 w-16 items-center justify-center rounded-full border text-xs text-muted-foreground">
+                                                No photo
+                                            </div>
+                                        )}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="profile_photo">
+                                                Upload a new photo
+                                            </Label>
+                                            <Input
+                                                id="profile_photo"
+                                                name="profile_photo"
+                                                type="file"
+                                                accept="image/*"
+                                            />
+                                            <InputError
+                                                className="mt-1"
+                                                message={errors.profile_photo}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                JPG, PNG or GIF. Max 2MB.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Name</Label>
 
@@ -164,12 +214,12 @@ export default function Profile({
 
                                             {status ===
                                                 'verification-link-sent' && (
-                                                <div className="mt-2 text-sm font-medium text-green-600">
-                                                    A new verification link has
-                                                    been sent to your email
-                                                    address.
-                                                </div>
-                                            )}
+                                                    <div className="mt-2 text-sm font-medium text-green-600">
+                                                        A new verification link has
+                                                        been sent to your email
+                                                        address.
+                                                    </div>
+                                                )}
                                         </div>
                                     )}
 
