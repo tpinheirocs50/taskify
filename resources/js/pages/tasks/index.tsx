@@ -20,6 +20,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -79,6 +80,10 @@ export default function Tasks() {
     const [loading, setLoading] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | Task['status']>('all');
+    const [priorityFilter, setPriorityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
+    const [dueDateFilter, setDueDateFilter] = useState<'all' | 'overdue' | 'today' | 'week' | 'month'>('all');
     const { auth } = usePage().props as any;
 
     const [newTaskForm, setNewTaskForm] = useState({
@@ -485,6 +490,60 @@ export default function Tasks() {
         return new Date(date).toLocaleDateString('pt-PT');
     };
 
+    // Filter tasks based on all criteria
+    const getFilteredTasks = (): Task[] => {
+        return tasks_list.filter((task) => {
+            // Archive filter
+            if (showArchived && !task.is_hidden) return false;
+            if (!showArchived && task.is_hidden) return false;
+
+            // Search query filter
+            if (searchQuery.trim()) {
+                const query = searchQuery.toLowerCase();
+                const matchesTitle = task.title.toLowerCase().includes(query);
+                const matchesClient = task.client_name?.toLowerCase().includes(query);
+                const matchesCompany = task.client_company?.toLowerCase().includes(query);
+                if (!matchesTitle && !matchesClient && !matchesCompany) return false;
+            }
+
+            // Status filter
+            if (statusFilter !== 'all' && task.status !== statusFilter) return false;
+
+            // Priority filter
+            if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
+
+            // Due date filter
+            if (dueDateFilter !== 'all' && task.due_date) {
+                const dueDate = new Date(task.due_date);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                switch (dueDateFilter) {
+                    case 'overdue':
+                        if (dueDate >= today) return false;
+                        break;
+                    case 'today':
+                        const tomorrow = new Date(today);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        if (dueDate < today || dueDate >= tomorrow) return false;
+                        break;
+                    case 'week':
+                        const weekEnd = new Date(today);
+                        weekEnd.setDate(weekEnd.getDate() + 7);
+                        if (dueDate < today || dueDate >= weekEnd) return false;
+                        break;
+                    case 'month':
+                        const monthEnd = new Date(today);
+                        monthEnd.setMonth(monthEnd.getMonth() + 1);
+                        if (dueDate < today || dueDate >= monthEnd) return false;
+                        break;
+                }
+            }
+
+            return true;
+        });
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Tasks" />
@@ -492,9 +551,14 @@ export default function Tasks() {
                 {/* Header Section */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white mb-2">
-                            Tasks
-                        </h1>
+                        <div className="flex items-center gap-3 mb-2">
+                            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                                Tasks
+                            </h1>
+                            <Badge variant="default" className="rounded-full font-bold px-2 py-0.5 text-xs">
+                                {getFilteredTasks().filter((t) => t.status !== 'completed').length}
+                            </Badge>
+                        </div>
                         <p className="text-gray-600 dark:text-gray-400">
                             Track project progress and collaborate with your team
                         </p>
@@ -930,17 +994,71 @@ export default function Tasks() {
                         </AlertDialogContent>
                     </AlertDialog>                </div>
 
-                {/* Filter for archived tasks */}
-                <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={showArchived}
-                            onChange={(e) => setShowArchived(e.target.checked)}
-                            className="rounded"
+                {/* Filters Section */}
+                <div className="space-y-4">
+                    <div className="grid gap-3 grid-cols-2 md:grid-cols-6">
+                        <Input
+                            placeholder="Search by title, client or company"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="md:col-span-2 col-span-2"
                         />
-                        <span>Mostrar arquivadas</span>
-                    </label>
+                        <Select
+                            value={statusFilter}
+                            onValueChange={(value) => setStatusFilter(value as 'all' | Task['status'])}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter by status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All statuses</SelectItem>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                <SelectItem value="completed">Completed</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            value={priorityFilter}
+                            onValueChange={(value) => setPriorityFilter(value as 'all' | 'low' | 'medium' | 'high')}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter by priority" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All priorities</SelectItem>
+                                <SelectItem value="low">Low</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="high">High</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            value={dueDateFilter}
+                            onValueChange={(value) => setDueDateFilter(value as 'all' | 'overdue' | 'today' | 'week' | 'month')}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter by due date" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All dates</SelectItem>
+                                <SelectItem value="overdue">Overdue</SelectItem>
+                                <SelectItem value="today">Due today</SelectItem>
+                                <SelectItem value="week">Due this week</SelectItem>
+                                <SelectItem value="month">Due this month</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            value={showArchived ? 'archived' : 'active'}
+                            onValueChange={(value) => setShowArchived(value === 'archived')}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="View" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Active tasks</SelectItem>
+                                <SelectItem value="archived">Archived tasks</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
 
                 {/* Tasks List */}
@@ -948,26 +1066,28 @@ export default function Tasks() {
                     <div className="flex items-center justify-center py-12">
                         <div className="text-gray-500 dark:text-gray-400">Loading tasks...</div>
                     </div>
-                ) : tasks_list.length === 0 ? (
+                ) : getFilteredTasks().length === 0 ? (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col items-center justify-center py-12 rounded-2xl bg-gray-50 dark:bg-gray-800"
+                        className="flex flex-col items-center justify-center py-12 rounded-2xl"
                     >
                         <CheckCircle2 className="mb-4 h-12 w-12 text-gray-400" />
                         <div className="text-center">
-                            <p className="font-medium text-gray-900 dark:text-white">No tasks found</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                                {tasks_list.length === 0 ? 'No tasks found' : 'No tasks match your filters'}
+                            </p>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                                Start by creating your first task
+                                {tasks_list.length === 0 
+                                    ? 'Start by creating your first task' 
+                                    : 'Try adjusting your search criteria'}
                             </p>
                         </div>
                     </motion.div>
                 ) : showArchived ? (
                     // Show archived tasks as simple cards list (no kanban)
-                    <div className="rounded-2xl p-4">
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                            {tasks_list
-                                .filter((t) => t.is_hidden)
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                            {getFilteredTasks()
                                 .map((task) => (
                                     <motion.div
                                         key={task.id}
@@ -976,7 +1096,7 @@ export default function Tasks() {
                                         className="cursor-grab active:cursor-grabbing"
                                         onClick={() => handleOpenEdit(task)}
                                     >
-                                        <Card className="overflow-hidden p-3 transform transition-all hover:-translate-y-1 hover:shadow-md bg-white dark:bg-gray-900" style={{ borderLeft: '4px solid var(--primary)' }}>
+                                        <Card className="overflow-hidden p-4 transform transition-all hover:-translate-y-1 hover:shadow-md" style={{ borderLeft: '4px solid var(--primary)' }}>
                                             <CardContent>
                                                 <div className="mb-3 flex items-start justify-between gap-2">
                                                     <div className="flex-1 min-w-0">
@@ -999,11 +1119,9 @@ export default function Tasks() {
                                         </Card>
                                     </motion.div>
                                 ))}
-                        </div>
                     </div>
                 ) : (
-                    <div className="rounded-2xl p-4">
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                             {/* Kanban columns */}
                             {[
                                 { id: 'pending', title: 'Pending' },
@@ -1012,14 +1130,14 @@ export default function Tasks() {
                             ].map((col) => (
                                 <div
                                     key={col.id}
-                                    className="min-h-[220px] rounded-lg border border-sidebar-border bg-transparent p-3"
+                                    className="min-h-[220px] rounded-lg border border-sidebar-border bg-transparent p-4"
                                 >
                                 <div className="mb-4 flex items-center justify-between">
                                     <h3 className="text-lg font-semibold capitalize text-sidebar-foreground">
                                         {col.title}
                                     </h3>
                                     <span className="text-sm text-sidebar-foreground/70">
-                                        {tasks_list.filter((t) => t.status === col.id && !t.is_hidden).length}
+                                        {getFilteredTasks().filter((t) => t.status === col.id).length}
                                     </span>
                                 </div>
 
@@ -1048,8 +1166,8 @@ export default function Tasks() {
                                     }}
                                     className="flex min-h-[120px] flex-col gap-2"
                                 >
-                                    {tasks_list
-                                        .filter((t) => t.status === col.id && (showArchived ? t.is_hidden : !t.is_hidden))
+                                    {getFilteredTasks()
+                                        .filter((t) => t.status === col.id)
                                         .map((task, index) => (
                                             <motion.div
                                                 key={task.id}
@@ -1074,7 +1192,7 @@ export default function Tasks() {
                                                             handleOpenEdit(task);
                                                         }
                                                     }}
-                                                >                                                    <Card className="overflow-hidden p-3 transform transition-all hover:-translate-y-1 hover:shadow-md bg-white dark:bg-gray-900" style={{ borderLeft: '4px solid var(--primary)' }}>
+                                                >                                                    <Card className="overflow-hidden p-4 transform transition-all hover:-translate-y-1 hover:shadow-md" style={{ borderLeft: '4px solid var(--primary)' }}>
                                                         <CardContent>
                                                             <div className="mb-1">
                                                                 <div className="flex items-center justify-between gap-2">
@@ -1103,22 +1221,6 @@ export default function Tasks() {
                                 </div>
                             </div>
                         ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Help Box */}
-
-
-                {/* Total tasks */}
-                {!loading && tasks_list.length > 0 && (
-                    <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>
-                            {showArchived 
-                                ? `${tasks_list.filter(t => t.is_hidden).length} archived tasks`
-                                : `${tasks_list.filter(t => !t.is_hidden).length} tasks`
-                            }
-                        </span>
                     </div>
                 )}
             </div>
