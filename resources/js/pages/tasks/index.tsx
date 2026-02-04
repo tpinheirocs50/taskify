@@ -1113,8 +1113,8 @@ export default function Tasks() {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="pending" disabled={pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>Pending</SelectItem>
-                                            <SelectItem value="in_progress" disabled={pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>In Progress</SelectItem>
+                                            <SelectItem value="pending" disabled={!!pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>Pending</SelectItem>
+                                            <SelectItem value="in_progress" disabled={!!pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>In Progress</SelectItem>
                                             <SelectItem value="completed">Completed</SelectItem>
                                         </SelectContent>
                                     </Select>
