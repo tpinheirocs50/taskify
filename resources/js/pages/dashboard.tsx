@@ -21,6 +21,15 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -83,6 +92,12 @@ export default function Dashboard() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
     const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+    const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [filterPriority, setFilterPriority] = useState<string>('all');
+    const [sortBy, setSortBy] = useState<string>('due_date');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const chartConfig = {
         totalRevenue: {
             label: 'Total Revenue',
@@ -646,67 +661,317 @@ export default function Dashboard() {
                                 </div>
                             </div>
                         ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Task</TableHead>
-                                        <TableHead>Client</TableHead>
-                                        <TableHead>Priority</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Due Date</TableHead>
-                                        <TableHead className="text-right">
-                                            Amount
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {tasks.map((task) => (
-                                        <TableRow key={task.id}>
-                                            <TableCell className="font-medium">
-                                                <div className="max-w-[200px] truncate">
-                                                    {task.title}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="max-w-[150px] truncate">
-                                                    {task.client_company ||
-                                                        task.client_name}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <span
-                                                    className={`capitalize ${getPriorityColor(task.priority)}`}
-                                                >
-                                                    {task.priority}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell>
-                                                <span
-                                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(task.status)}`}
-                                                >
-                                                    {task.status.replace(
-                                                        '_',
-                                                        ' ',
-                                                    )}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(
-                                                    task.due_date,
-                                                ).toLocaleDateString('pt-PT')}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {task.amount
-                                                    ? `${task.amount.toLocaleString('pt-PT', {
-                                                        minimumFractionDigits: 0,
-                                                        maximumFractionDigits: 0,
-                                                    })} €`
-                                                    : '-'}
-                                            </TableCell>
+                            <div className="space-y-4">
+                                {/* Filters and Sorting */}
+                                <div className="grid gap-3 md:grid-cols-5">
+                                    <Select
+                                        value={filterStatus}
+                                        onValueChange={(value) => {
+                                            setFilterStatus(value);
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Filter by status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All statuses</SelectItem>
+                                            <SelectItem value="pending">Pending</SelectItem>
+                                            <SelectItem value="in_progress">In Progress</SelectItem>
+                                            <SelectItem value="completed">Completed</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Select
+                                        value={filterPriority}
+                                        onValueChange={(value) => {
+                                            setFilterPriority(value);
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Filter by priority" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All priorities</SelectItem>
+                                            <SelectItem value="low">Low</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="high">High</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Select
+                                        value={sortBy}
+                                        onValueChange={(value) => {
+                                            setSortBy(value);
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Sort by" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="due_date">Due Date</SelectItem>
+                                            <SelectItem value="priority">Priority</SelectItem>
+                                            <SelectItem value="status">Status</SelectItem>
+                                            <SelectItem value="amount">Amount</SelectItem>
+                                            <SelectItem value="title">Title</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Select
+                                        value={sortOrder}
+                                        onValueChange={(value) => setSortOrder(value as 'asc' | 'desc')}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Order" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="asc">Ascending</SelectItem>
+                                            <SelectItem value="desc">Descending</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setFilterStatus('all');
+                                            setFilterPriority('all');
+                                            setSortBy('due_date');
+                                            setSortOrder('asc');
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        Reset
+                                    </Button>
+                                </div>
+
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Task</TableHead>
+                                            <TableHead>Client</TableHead>
+                                            <TableHead>Priority</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead>Due Date</TableHead>
+                                            <TableHead className="text-right">
+                                                Amount
+                                            </TableHead>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {(() => {
+                                            // Apply filters
+                                            let filteredTasks = tasks.filter((task) => {
+                                                const statusMatch =
+                                                    filterStatus === 'all' ||
+                                                    task.status === filterStatus;
+                                                const priorityMatch =
+                                                    filterPriority === 'all' ||
+                                                    task.priority === filterPriority;
+                                                return statusMatch && priorityMatch;
+                                            });
+
+                                            // Apply sorting
+                                            const priorityOrder = {
+                                                high: 3,
+                                                medium: 2,
+                                                low: 1,
+                                            };
+                                            const statusOrder = {
+                                                pending: 1,
+                                                in_progress: 2,
+                                                completed: 3,
+                                            };
+
+                                            filteredTasks.sort((a, b) => {
+                                                let comparison = 0;
+
+                                                switch (sortBy) {
+                                                    case 'due_date':
+                                                        comparison = new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                                                        break;
+                                                    case 'priority':
+                                                        comparison =
+                                                            priorityOrder[a.priority as keyof typeof priorityOrder] -
+                                                            priorityOrder[b.priority as keyof typeof priorityOrder];
+                                                        break;
+                                                    case 'status':
+                                                        comparison =
+                                                            statusOrder[a.status as keyof typeof statusOrder] -
+                                                            statusOrder[b.status as keyof typeof statusOrder];
+                                                        break;
+                                                    case 'amount':
+                                                        comparison = (a.amount || 0) - (b.amount || 0);
+                                                        break;
+                                                    case 'title':
+                                                        comparison = a.title.localeCompare(b.title);
+                                                        break;
+                                                    default:
+                                                        break;
+                                                }
+
+                                                return sortOrder === 'asc' ? comparison : -comparison;
+                                            });
+
+                                            // Apply pagination
+                                            const startIndex = (currentPage - 1) * itemsPerPage;
+                                            const endIndex = startIndex + itemsPerPage;
+                                            const paginatedTasks = filteredTasks.slice(startIndex, endIndex);
+
+                                            if (filteredTasks.length === 0) {
+                                                return (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                                            No tasks match the selected filters
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            }
+
+                                            return paginatedTasks.map((task) => (
+                                                <TableRow key={task.id}>
+                                                    <TableCell className="font-medium">
+                                                        <div className="max-w-[200px] truncate">
+                                                            {task.title}
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="max-w-[150px] truncate">
+                                                            {task.client_company ||
+                                                                task.client_name}
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span
+                                                            className={`capitalize ${getPriorityColor(task.priority)}`}
+                                                        >
+                                                            {task.priority}
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span
+                                                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(task.status)}`}
+                                                        >
+                                                            {task.status.replace(
+                                                                '_',
+                                                                ' ',
+                                                            )}
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {new Date(
+                                                            task.due_date,
+                                                        ).toLocaleDateString('pt-PT')}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {task.amount
+                                                            ? `${task.amount.toLocaleString('pt-PT', {
+                                                                minimumFractionDigits: 0,
+                                                                maximumFractionDigits: 0,
+                                                            })} €`
+                                                            : '-'}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ));
+                                        })()}
+                                    </TableBody>
+                                </Table>
+
+                                {/* Pagination Controls */}
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-muted-foreground">
+                                        {(() => {
+                                            const filteredTasksCount = tasks.filter((task) => {
+                                                const statusMatch =
+                                                    filterStatus === 'all' ||
+                                                    task.status === filterStatus;
+                                                const priorityMatch =
+                                                    filterPriority === 'all' ||
+                                                    task.priority === filterPriority;
+                                                return statusMatch && priorityMatch;
+                                            }).length;
+                                            const startIndex = (currentPage - 1) * itemsPerPage + 1;
+                                            const endIndex = Math.min(currentPage * itemsPerPage, filteredTasksCount);
+                                            return `Showing ${filteredTasksCount > 0 ? startIndex : 0} to ${endIndex} of ${filteredTasksCount} tasks`;
+                                        })()}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                            disabled={currentPage === 1}
+                                            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {(() => {
+                                                const filteredTasksCount = tasks.filter((task) => {
+                                                    const statusMatch =
+                                                        filterStatus === 'all' ||
+                                                        task.status === filterStatus;
+                                                    const priorityMatch =
+                                                        filterPriority === 'all' ||
+                                                        task.priority === filterPriority;
+                                                    return statusMatch && priorityMatch;
+                                                }).length;
+                                                const totalPages = Math.ceil(filteredTasksCount / itemsPerPage);
+                                                const pages = [];
+                                                const maxPages = 5;
+                                                let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+                                                let endPage = Math.min(totalPages, startPage + maxPages - 1);
+                                                if (endPage - startPage < maxPages - 1) {
+                                                    startPage = Math.max(1, endPage - maxPages + 1);
+                                                }
+                                                for (let i = startPage; i <= endPage; i++) {
+                                                    pages.push(i);
+                                                }
+                                                return pages.map((page) => (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() => setCurrentPage(page)}
+                                                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium ring-offset-background transition-colors ${currentPage === page
+                                                            ? 'border-primary bg-primary text-primary-foreground'
+                                                            : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+                                                            }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                ));
+                                            })()}
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const filteredTasksCount = tasks.filter((task) => {
+                                                    const statusMatch =
+                                                        filterStatus === 'all' ||
+                                                        task.status === filterStatus;
+                                                    const priorityMatch =
+                                                        filterPriority === 'all' ||
+                                                        task.priority === filterPriority;
+                                                    return statusMatch && priorityMatch;
+                                                }).length;
+                                                setCurrentPage(Math.min(Math.ceil(filteredTasksCount / itemsPerPage), currentPage + 1));
+                                            }}
+                                            disabled={(() => {
+                                                const filteredTasksCount = tasks.filter((task) => {
+                                                    const statusMatch =
+                                                        filterStatus === 'all' ||
+                                                        task.status === filterStatus;
+                                                    const priorityMatch =
+                                                        filterPriority === 'all' ||
+                                                        task.priority === filterPriority;
+                                                    return statusMatch && priorityMatch;
+                                                }).length;
+                                                return currentPage === Math.ceil(filteredTasksCount / itemsPerPage);
+                                            })()}
+                                            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         )}
                     </CardContent>
                 </Card>
