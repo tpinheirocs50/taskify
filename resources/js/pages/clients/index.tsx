@@ -3,7 +3,7 @@ import AppLayout from '@/layouts/app-layout';
 import { Head } from '@inertiajs/react';
 import { type BreadcrumbItem } from '@/types';
 import { clients } from '@/data';
-import { Trash2, Mail, Phone, MapPin } from 'lucide-react';
+import { Archive, ArchiveRestore, Mail, Phone, MapPin } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -75,7 +75,7 @@ function getAvatarColor(id: number): string {
 
 export default function Clients({ clients: clientsList }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [includeTin, setIncludeTin] = useState(false);
+  const [tinQuery, setTinQuery] = useState('');
   const [onlyInactive, setOnlyInactive] = useState(false);
   const [clientsState, setClients] = useState<Client[]>(clientsList || []);
   const [loading, setLoading] = useState(false);
@@ -89,12 +89,13 @@ export default function Clients({ clients: clientsList }: Props) {
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [phone, setPhone] = useState('');
-  const [isActive, setIsActive] = useState(true);
   const [createErrors, setCreateErrors] = useState<Record<string, string[]>>({});
 
   // Delete dialog
   const [deleteClientId, setDeleteClientId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
+  const [activateClient, setActivateClient] = useState<Client | null>(null);
 
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
@@ -110,9 +111,6 @@ export default function Clients({ clients: clientsList }: Props) {
   const [editIsActive, setEditIsActive] = useState(true);
   const [isUpdatingClient, setIsUpdatingClient] = useState(false);
 
-  // Stats shown in edit modal
-  const [totalAmount, setTotalAmount] = useState<number>(0);
-  const [activeTasksCount, setActiveTasksCount] = useState<number>(0);
 
   // Pagination (client-side)
   const [currentPage, setCurrentPage] = useState(1);
@@ -126,7 +124,7 @@ export default function Clients({ clients: clientsList }: Props) {
   // Reset to first page when search, view mode or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, showAll, includeTin, onlyInactive]);
+  }, [searchQuery, tinQuery, showAll, onlyInactive]);
 
   const fetchClients = async () => {
     setLoading(true);
@@ -161,43 +159,6 @@ export default function Clients({ clients: clientsList }: Props) {
     }
   };
 
-  // Fetch tasks for a specific client to calculate totals / active count
-  const fetchClientTasks = async (clientId: number) => {
-    try {
-      let allTasks: any[] = [];
-      let currentPage = 1;
-      let lastPage = 1;
-
-      do {
-        const response = await fetch(`/api/tasks?page=${currentPage}`, {
-          credentials: 'same-origin',
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-        const data = await response.json();
-
-        if (data.success) {
-          allTasks = [...allTasks, ...data.data];
-          lastPage = data.pagination?.last_page || 1;
-          currentPage++;
-        } else {
-          break;
-        }
-      } while (currentPage <= lastPage);
-
-      const clientTasks = allTasks.filter((t) => Number(t.client_id) === Number(clientId));
-      const total = clientTasks.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-      const activeCount = clientTasks.filter((t) => t.status !== 'completed').length;
-
-      setTotalAmount(total);
-      setActiveTasksCount(activeCount);
-    } catch (error) {
-      console.error('Error fetching client tasks:', error);
-      setTotalAmount(0);
-      setActiveTasksCount(0);
-    }
-  };
 
   const openEditClient = async (client: Client) => {
     setEditClient(client);
@@ -209,7 +170,6 @@ export default function Clients({ clients: clientsList }: Props) {
     setEditPhone(client.phone || '');
     setEditIsActive(client.isActive ?? true);
 
-    await fetchClientTasks(client.id);
     setIsEditOpen(true);
   };
 
@@ -285,7 +245,6 @@ export default function Clients({ clients: clientsList }: Props) {
           email,
           company,
           phone,
-          isActive,
         }),
       });
 
@@ -300,7 +259,6 @@ export default function Clients({ clients: clientsList }: Props) {
         setEmail('');
         setCompany('');
         setPhone('');
-        setIsActive(true);
         setCreateErrors({});
         await fetchClients();
       } else {
@@ -349,6 +307,45 @@ export default function Clients({ clients: clientsList }: Props) {
     }
   };
 
+  const handleActivateClient = async (client: Client) => {
+    setIsActivating(true);
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute('content') || '',
+          Accept: 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          name: client.name,
+          tin: client.tin,
+          address: client.address,
+          email: client.email,
+          company: client.company,
+          phone: client.phone,
+          isActive: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await fetchClients();
+      } else {
+        setAlertMessage(data.message || 'Failed to activate client');
+      }
+    } catch (error) {
+      console.error('Activate client error:', error);
+      setAlertMessage('Failed to activate client');
+    } finally {
+      setIsActivating(false);
+    }
+  };
+
   const query = searchQuery.trim().toLowerCase();
 
   const filtered = clientsState.filter((client) => {
@@ -357,14 +354,19 @@ export default function Clients({ clients: clientsList }: Props) {
     } else if (client.isActive === false) {
       return false;
     }
+    const tinTerm = tinQuery.trim().toLowerCase();
+    if (tinTerm) {
+      const tinMatch = client.tin ? client.tin.toLowerCase().includes(tinTerm) : false;
+      if (!tinMatch) return false;
+    }
+
     if (!query) return true;
 
     const nameMatch = client.name.toLowerCase().includes(query);
-    const tinMatch = client.tin ? client.tin.toLowerCase().includes(query) : false;
     const companyMatch = (client.company || '').toLowerCase().includes(query);
     const emailMatch = client.email.toLowerCase().includes(query);
 
-    return nameMatch || (includeTin && tinMatch) || companyMatch || emailMatch;
+    return nameMatch || companyMatch || emailMatch;
   });
 
   // Sort: active first, prioritize name matches in search, then by created_at desc (newest first)
@@ -377,12 +379,6 @@ export default function Clients({ clients: clientsList }: Props) {
       const aName = a.name.toLowerCase().includes(query) ? 1 : 0;
       const bName = b.name.toLowerCase().includes(query) ? 1 : 0;
       if (aName !== bName) return bName - aName; // name matches first
-
-      if (includeTin) {
-        const aTin = a.tin ? a.tin.toLowerCase().includes(query) : false;
-        const bTin = b.tin ? b.tin.toLowerCase().includes(query) : false;
-        if (aTin !== bTin) return bTin ? -1 : 1;
-      }
     }
 
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -421,7 +417,6 @@ export default function Clients({ clients: clientsList }: Props) {
               setEmail('');
               setCompany('');
               setPhone('');
-              setIsActive(true);
             }
           }}>
             <DialogTrigger asChild>
@@ -483,10 +478,6 @@ export default function Clients({ clients: clientsList }: Props) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <Checkbox id="client-active" checked={isActive} onCheckedChange={(v) => setIsActive(Boolean(v))} />
-                  <Label htmlFor="client-active">Active</Label>
-                </div>
               </div>
 
               <DialogFooter>
@@ -498,23 +489,29 @@ export default function Clients({ clients: clientsList }: Props) {
         </div>
 
         <div className="flex flex-col md:flex-row md:items-center md:gap-3">
-          <div className="flex-1">
+          <div className="flex flex-1 flex-col md:flex-row md:items-center md:gap-3">
+            <div className="flex-1">
             <Input
               placeholder="Pesquisar clientes (por nome)"
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full"
             />
+            </div>
+            <div className="flex-1 mt-2 md:mt-0">
+              <Input
+                placeholder="Pesquisar clientes por TIN"
+                value={tinQuery}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTinQuery(e.target.value)}
+                className="w-full"
+              />
+            </div>
           </div>
 
           <div className="flex gap-3 mt-2 md:mt-0 items-center">
             <div className="flex items-center gap-2">
               <Checkbox id="filter-inactive" checked={onlyInactive} onCheckedChange={(v) => setOnlyInactive(Boolean(v))} className="rounded-full" />
               <Label htmlFor="filter-inactive">Inativos</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="include-tin" checked={includeTin} onCheckedChange={(v) => setIncludeTin(Boolean(v))} className="rounded-full" />
-              <Label htmlFor="include-tin">Pesquisar TIN</Label>
             </div>
           </div>
         </div>
@@ -536,11 +533,19 @@ export default function Clients({ clients: clientsList }: Props) {
                     </div>
                   </div>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setDeleteClientId(client.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (client.isActive === false) {
+                        setActivateClient(client);
+                      } else {
+                        setDeleteClientId(client.id);
+                      }
+                    }}
                     className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                    title="Delete client"
+                    title={client.isActive === false ? 'Activate client' : 'Archive client'}
+                    disabled={isActivating}
                   >
-                    <Trash2 size={18} />
+                    {client.isActive === false ? <ArchiveRestore size={18} /> : <Archive size={18} />}
                   </button>
                 </div>
 
@@ -605,14 +610,36 @@ export default function Clients({ clients: clientsList }: Props) {
         <AlertDialog open={deleteClientId !== null} onOpenChange={(open: boolean) => !open && setDeleteClientId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Client</AlertDialogTitle>
+              <AlertDialogTitle>Archive Client</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete this client? This action cannot be undone.
+                Are you sure you want to archive this client?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteClient} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">{isDeleting ? 'Deleting...' : 'Delete'}</AlertDialogAction>
+              <AlertDialogAction onClick={handleDeleteClient} disabled={isDeleting}>{isDeleting ? 'Archiving...' : 'Archive'}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Activate Confirmation */}
+        <AlertDialog open={activateClient !== null} onOpenChange={(open: boolean) => !open && setActivateClient(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Activate Client</AlertDialogTitle>
+              <AlertDialogDescription>
+                Do you want to activate {activateClient?.name} again?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isActivating}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => activateClient && handleActivateClient(activateClient)}
+                disabled={isActivating}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {isActivating ? 'Activating...' : 'Yes'}
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -621,8 +648,7 @@ export default function Clients({ clients: clientsList }: Props) {
         <Dialog open={isEditOpen} onOpenChange={(open) => setIsEditOpen(open)}>
           <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Edit Client #{editClient?.id}</DialogTitle>
-              <DialogDescription>Update client details (read-only: ID and Created At)</DialogDescription>
+              <DialogTitle>Edit {editClient?.name}</DialogTitle>
             </DialogHeader>
 
             <div className="py-4 space-y-4">
@@ -673,16 +699,6 @@ export default function Clients({ clients: clientsList }: Props) {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2 mt-4">
-                <div className="bg-muted/10 rounded-lg p-4 text-center">
-                  <div className="text-sm text-muted-foreground">Total Amount</div>
-                  <div className="text-xl font-medium">{totalAmount.toFixed(2)} €</div>
-                </div>
-                <div className="bg-muted/10 rounded-lg p-4 text-center">
-                  <div className="text-sm text-muted-foreground">Active Tasks</div>
-                  <div className="text-xl font-medium">{activeTasksCount}</div>
-                </div>
-              </div>
             </div>
 
             <DialogFooter>
