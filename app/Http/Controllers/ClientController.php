@@ -11,12 +11,19 @@ class ClientController extends Controller
     /**
      * Display a listing of all clients.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
-            $clients = Client::where('user_id', request()->user()->id)
-                ->orderBy('id', 'desc')
-                ->paginate(15);
+            $query = Client::where('user_id', $request->user()->id)
+                ->orderBy('id', 'desc');
+
+            if ($request->query('status') === 'inactive') {
+                $query->where('isActive', false);
+            } else {
+                $query->where('isActive', true);
+            }
+
+            $clients = $query->paginate(6);
 
             return response()->json([
                 'success' => true,

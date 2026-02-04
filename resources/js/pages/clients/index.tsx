@@ -17,6 +17,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,7 +33,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 
 type Client = {
@@ -76,7 +82,7 @@ function getAvatarColor(id: number): string {
 export default function Clients({ clients: clientsList }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [tinQuery, setTinQuery] = useState('');
-  const [onlyInactive, setOnlyInactive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive'>('active');
   const [clientsState, setClients] = useState<Client[]>(clientsList || []);
   const [loading, setLoading] = useState(false);
 
@@ -108,50 +114,42 @@ export default function Clients({ clients: clientsList }: Props) {
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editIsActive, setEditIsActive] = useState(true);
   const [isUpdatingClient, setIsUpdatingClient] = useState(false);
 
 
-  // Pagination (client-side)
+  // Pagination (server-side)
   const [currentPage, setCurrentPage] = useState(1);
-  const perPage = 6;
-  const [showAll, setShowAll] = useState(false);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    per_page: 6,
+    current_page: 1,
+    last_page: 1,
+  });
 
   useEffect(() => {
-    fetchClients();
-  }, []);
+    fetchClients(currentPage, statusFilter);
+  }, [currentPage, statusFilter]);
 
   // Reset to first page when search, view mode or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, tinQuery, showAll, onlyInactive]);
+  }, [searchQuery, tinQuery, statusFilter]);
 
-  const fetchClients = async () => {
+  const fetchClients = async (page = 1, status = 'active') => {
     setLoading(true);
     try {
-      let allClients: Client[] = [];
-      let currentPage = 1;
-      let lastPage = 1;
+      const response = await fetch(`/api/clients?page=${page}&status=${status}`, {
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      const data = await response.json();
 
-      do {
-        const response = await fetch(`/api/clients?page=${currentPage}`, {
-          credentials: 'same-origin',
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-        const data = await response.json();
-
-        if (data.success) {
-          allClients = [...allClients, ...data.data];
-          lastPage = data.pagination?.last_page || 1;
-          currentPage++;
-        } else {
-          break;
-        }
-      } while (currentPage <= lastPage);
-
-      setClients(allClients);
+      if (data.success) {
+        setClients(data.data);
+        setPagination(data.pagination);
+      }
     } catch (error) {
       console.error('Error fetching clients:', error);
     } finally {
@@ -168,8 +166,6 @@ export default function Clients({ clients: clientsList }: Props) {
     setEditEmail(client.email);
     setEditCompany(client.company || '');
     setEditPhone(client.phone || '');
-    setEditIsActive(client.isActive ?? true);
-
     setIsEditOpen(true);
   };
 
@@ -193,7 +189,6 @@ export default function Clients({ clients: clientsList }: Props) {
           email: editEmail,
           company: editCompany,
           phone: editPhone,
-          isActive: editIsActive,
         }),
       });
 
@@ -202,7 +197,7 @@ export default function Clients({ clients: clientsList }: Props) {
       if (data.success) {
         setIsEditOpen(false);
         setEditClient(null);
-        await fetchClients();
+        await fetchClients(currentPage, statusFilter);
       } else {
         setAlertMessage(data.message || 'Failed to update client');
       }
@@ -260,7 +255,7 @@ export default function Clients({ clients: clientsList }: Props) {
         setCompany('');
         setPhone('');
         setCreateErrors({});
-        await fetchClients();
+        await fetchClients(currentPage, statusFilter);
       } else {
         if (response.status === 422 && data.errors) {
           setCreateErrors(data.errors);
@@ -295,7 +290,7 @@ export default function Clients({ clients: clientsList }: Props) {
 
       if (data.success) {
         setDeleteClientId(null);
-        await fetchClients();
+        await fetchClients(currentPage, statusFilter);
       } else {
         setAlertMessage(data.message || 'Failed to delete client');
       }
@@ -334,7 +329,7 @@ export default function Clients({ clients: clientsList }: Props) {
       const data = await response.json();
 
       if (data.success) {
-        await fetchClients();
+        await fetchClients(currentPage, statusFilter);
       } else {
         setAlertMessage(data.message || 'Failed to activate client');
       }
@@ -349,7 +344,7 @@ export default function Clients({ clients: clientsList }: Props) {
   const query = searchQuery.trim().toLowerCase();
 
   const filtered = clientsState.filter((client) => {
-    if (onlyInactive) {
+    if (statusFilter === 'inactive') {
       if (client.isActive !== false) return false;
     } else if (client.isActive === false) {
       return false;
@@ -386,15 +381,15 @@ export default function Clients({ clients: clientsList }: Props) {
     return bTime - aTime; // newest first
   });
 
-  // Pagination calculations
-  const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
+  // Pagination calculations (server-side)
+  const totalPages = Math.max(1, pagination.last_page || 1);
 
   // Ensure current page is within bounds
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages]);
 
-  const displayed = showAll ? sorted : sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const displayed = sorted;
 
   return (
     <AppLayout breadcrumbs={breadcrumbs}>
@@ -429,21 +424,19 @@ export default function Clients({ clients: clientsList }: Props) {
               </DialogHeader>
 
               <div className="py-4 space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="client-name">Name</Label>
-                    <Input id="client-name" value={name} onChange={(e) => setName(e.target.value)} required autoComplete="off" />
-                    {createErrors.name && (
-                      <p className="text-sm text-destructive">{createErrors.name[0]}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-tin">TIN</Label>
-                    <Input id="client-tin" value={tin} onChange={(e) => setTin(e.target.value)} required autoComplete="off" />
-                    {createErrors.tin && (
-                      <p className="text-sm text-destructive">{createErrors.tin[0]}</p>
-                    )}
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-name">Name</Label>
+                  <Input id="client-name" value={name} onChange={(e) => setName(e.target.value)} required autoComplete="off" />
+                  {createErrors.name && (
+                    <p className="text-sm text-destructive">{createErrors.name[0]}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-tin">TIN</Label>
+                  <Input id="client-tin" value={tin} onChange={(e) => setTin(e.target.value)} required autoComplete="off" />
+                  {createErrors.tin && (
+                    <p className="text-sm text-destructive">{createErrors.tin[0]}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -454,28 +447,26 @@ export default function Clients({ clients: clientsList }: Props) {
                   )}
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="client-email">Email</Label>
-                    <Input id="client-email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" />
-                    {createErrors.email && (
-                      <p className="text-sm text-destructive">{createErrors.email[0]}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-company">Company</Label>
-                    <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="off" />
-                    {createErrors.company && (
-                      <p className="text-sm text-destructive">{createErrors.company[0]}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-phone">Phone</Label>
-                    <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
-                    {createErrors.phone && (
-                      <p className="text-sm text-destructive">{createErrors.phone[0]}</p>
-                    )}
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-email">Email</Label>
+                  <Input id="client-email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" />
+                  {createErrors.email && (
+                    <p className="text-sm text-destructive">{createErrors.email[0]}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-company">Company</Label>
+                  <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="off" />
+                  {createErrors.company && (
+                    <p className="text-sm text-destructive">{createErrors.company[0]}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-phone">Phone</Label>
+                  <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
+                  {createErrors.phone && (
+                    <p className="text-sm text-destructive">{createErrors.phone[0]}</p>
+                  )}
                 </div>
 
               </div>
@@ -488,31 +479,36 @@ export default function Clients({ clients: clientsList }: Props) {
           </Dialog>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:gap-3">
-          <div className="flex flex-1 flex-col md:flex-row md:items-center md:gap-3">
-            <div className="flex-1">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
             <Input
-              placeholder="Pesquisar clientes (por nome)"
+              placeholder="Search clients (by name)"
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full"
             />
-            </div>
-            <div className="flex-1 mt-2 md:mt-0">
-              <Input
-                placeholder="Pesquisar clientes por TIN"
-                value={tinQuery}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTinQuery(e.target.value)}
-                className="w-full"
-              />
-            </div>
           </div>
-
-          <div className="flex gap-3 mt-2 md:mt-0 items-center">
-            <div className="flex items-center gap-2">
-              <Checkbox id="filter-inactive" checked={onlyInactive} onCheckedChange={(v) => setOnlyInactive(Boolean(v))} className="rounded-full" />
-              <Label htmlFor="filter-inactive">Inativos</Label>
-            </div>
+          <div>
+            <Input
+              placeholder="Search clients by TIN"
+              value={tinQuery}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTinQuery(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as 'active' | 'inactive')}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -524,29 +520,31 @@ export default function Clients({ clients: clientsList }: Props) {
           ) : (
             displayed.map((client) => (
               <div key={client.id} onClick={() => openEditClient(client)} className={`bg-card text-card-foreground shadow-sm border border-border rounded-lg p-6 ${!client.isActive ? 'opacity-60' : ''} cursor-pointer hover:shadow-md transition-shadow`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-4">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex min-w-0 flex-1 items-center gap-4">
                     <div className={`w-12 h-12 ${getAvatarColor(client.id)} rounded-full flex items-center justify-center text-card-foreground font-bold text-sm`}>{getInitials(client.name)}</div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-card-foreground">{client.name}</h3>
-                      <p className="text-sm text-muted-foreground">{client.company}</p>
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-semibold text-card-foreground truncate">{client.name}</h3>
+                      <p className="text-sm text-muted-foreground truncate">{client.company}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (client.isActive === false) {
-                        setActivateClient(client);
-                      } else {
-                        setDeleteClientId(client.id);
-                      }
-                    }}
-                    className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                    title={client.isActive === false ? 'Activate client' : 'Archive client'}
-                    disabled={isActivating}
-                  >
-                    {client.isActive === false ? <ArchiveRestore size={18} /> : <Archive size={18} />}
-                  </button>
+                  <div className="ml-auto flex w-10 justify-end">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (client.isActive === false) {
+                          setActivateClient(client);
+                        } else {
+                          setDeleteClientId(client.id);
+                        }
+                      }}
+                      className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                      title={client.isActive === false ? 'Activate client' : 'Archive client'}
+                      disabled={isActivating}
+                    >
+                      {client.isActive === false ? <ArchiveRestore size={18} /> : <Archive size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -571,14 +569,14 @@ export default function Clients({ clients: clientsList }: Props) {
         {/* Pagination */}
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-muted-foreground">
-            Mostrando {displayed.length} de {sorted.length} clientes{!showAll && sorted.length > perPage ? ` — página ${currentPage} de ${totalPages}` : ''}
+            Showing {displayed.length} of {pagination.total} clients — page {pagination.current_page} of {pagination.last_page}
           </div>
 
           <div className="flex items-center gap-2">
-            {!showAll && totalPages > 1 && (
+            {totalPages > 1 && (
               <>
                 <Button size="sm" variant="outline" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                  Anterior
+                  Previous
                 </Button>
 
                 <div className="hidden md:flex items-center gap-1">
@@ -595,14 +593,10 @@ export default function Clients({ clients: clientsList }: Props) {
                 </div>
 
                 <Button size="sm" variant="outline" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
-                  Próximo
+                  Next
                 </Button>
               </>
             )}
-
-            <Button size="sm" variant={showAll ? 'outline' : 'ghost'} onClick={() => { setShowAll((s) => !s); setCurrentPage(1); }}>
-              {showAll ? 'Mostrar paginado' : 'Ver todos'}
-            </Button>
           </div>
         </div>
 
@@ -652,15 +646,13 @@ export default function Clients({ clients: clientsList }: Props) {
             </DialogHeader>
 
             <div className="py-4 space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-client-name">Name</Label>
-                  <Input id="edit-client-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-client-tin">TIN</Label>
-                  <Input id="edit-client-tin" value={editTin} onChange={(e) => setEditTin(e.target.value)} />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-client-name">Name</Label>
+                <Input id="edit-client-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-client-tin">TIN</Label>
+                <Input id="edit-client-tin" value={editTin} onChange={(e) => setEditTin(e.target.value)} />
               </div>
 
               <div className="space-y-2">
@@ -668,36 +660,19 @@ export default function Clients({ clients: clientsList }: Props) {
                 <Textarea id="edit-client-address" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} rows={3} />
               </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-client-email">Email</Label>
-                  <Input id="edit-client-email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-client-company">Company</Label>
-                  <Input id="edit-client-company" value={editCompany} onChange={(e) => setEditCompany(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-client-phone">Phone</Label>
-                  <Input id="edit-client-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-client-email">Email</Label>
+                <Input id="edit-client-email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-client-company">Company</Label>
+                <Input id="edit-client-company" value={editCompany} onChange={(e) => setEditCompany(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-client-phone">Phone</Label>
+                <Input id="edit-client-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
               </div>
 
-              <div className="flex items-center gap-3">
-                <Checkbox id="edit-client-active" checked={editIsActive} onCheckedChange={(v) => setEditIsActive(Boolean(v))} />
-                <Label htmlFor="edit-client-active">Active</Label>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>ID</Label>
-                  <Input value={String(editClient?.id ?? '')} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label>Created At</Label>
-                  <Input value={editClient?.created_at ? new Date(editClient.created_at).toLocaleString('pt-PT') : ''} disabled />
-                </div>
-              </div>
 
             </div>
 
