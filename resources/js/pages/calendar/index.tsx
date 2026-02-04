@@ -336,7 +336,7 @@ export default function Calendar() {
                                                                     Amount:
                                                                 </span>{' '}
                                                                 <span className="text-muted-foreground">
-                                                                    €{typeof task.amount === 'string' ? parseFloat(task.amount).toFixed(2) : (task.amount as number).toFixed(2)}
+                                                                    {typeof task.amount === 'string' ? parseFloat(task.amount).toFixed(2) : (task.amount as number).toFixed(2)} €
                                                                 </span>
                                                             </div>
                                                         )}
