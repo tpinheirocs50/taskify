@@ -97,7 +97,7 @@ export default function Tasks() {
     const [editTaskForm, setEditTaskForm] = useState<any>(null);
     const [originalEditTaskForm, setOriginalEditTaskForm] = useState<any>(null);
     const [isPendingArchive, setIsPendingArchive] = useState(false);
-    const isDraggingRef = useRef(false);
+    const dragEndTimeRef = useRef<number>(0);
     const editDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
     const createDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -1061,18 +1061,18 @@ export default function Tasks() {
                                                 <div
                                                     draggable
                                                     onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
-                                                        isDraggingRef.current = true;
                                                         e.dataTransfer.setData('text/plain', String(task.id));
                                                         e.dataTransfer.effectAllowed = 'move';
                                                     }}
                                                     onDragEnd={() => {
-                                                        // small delay to avoid click firing immediately after drag
-                                                        setTimeout(() => {
-                                                            isDraggingRef.current = false;
-                                                        }, 50);
+                                                        dragEndTimeRef.current = Date.now();
                                                     }}
                                                     onClick={() => {
-                                                        if (!isDraggingRef.current) handleOpenEdit(task);
+                                                        const timeSinceDrag = Date.now() - dragEndTimeRef.current;
+                                                        // Only block click if drag ended very recently (within 100ms)
+                                                        if (timeSinceDrag > 100) {
+                                                            handleOpenEdit(task);
+                                                        }
                                                     }}
                                                 >                                                    <Card className="overflow-hidden p-3 transform transition-all hover:-translate-y-1 hover:shadow-md bg-white dark:bg-gray-900" style={{ borderLeft: '4px solid var(--primary)' }}>
                                                         <CardContent>
