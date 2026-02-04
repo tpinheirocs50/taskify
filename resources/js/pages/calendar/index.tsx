@@ -31,6 +31,7 @@ interface Task {
     client_name: string;
     client_company: string | null;
     invoice_status: string | null;
+    is_hidden?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -69,8 +70,8 @@ export default function Calendar() {
                     }
                 } while (currentPage <= lastPage);
 
-                // Filter tasks to only include those from the logged-in user
-                const userTasks = allTasks.filter((task) => task.user_id === auth.user.id);
+                // Filter tasks to only include those from the logged-in user and not hidden
+                const userTasks = allTasks.filter((task) => task.user_id === auth.user.id && !task.is_hidden);
                 setTasks(userTasks);
 
                 // Group tasks by due date
@@ -386,7 +387,7 @@ export default function Calendar() {
                                                 const dueDate = new Date(task.due_date);
                                                 const today = new Date();
                                                 const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-                                                return dueDate >= today && dueDate <= nextWeek;
+                                                return dueDate >= today && dueDate <= nextWeek && !task.is_hidden;
                                             })
                                             .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
                                             .slice(0, 5)
