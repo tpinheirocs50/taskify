@@ -59,6 +59,9 @@ interface Task {
     client_name: string;
     client_company: string;
     invoice_status: string | null;
+    is_hidden?: boolean;
+    archived_at?: string | null;
+    archived_by?: number | null;
     created_at: string;
     updated_at: string;
 }
@@ -75,6 +78,7 @@ export default function Tasks() {
     const [tasks_list, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [showArchived, setShowArchived] = useState(false);
     const { auth } = usePage().props as any;
 
     const [newTaskForm, setNewTaskForm] = useState({
@@ -91,6 +95,8 @@ export default function Tasks() {
 
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editTaskForm, setEditTaskForm] = useState<any>(null);
+    const [originalEditTaskForm, setOriginalEditTaskForm] = useState<any>(null);
+    const [isPendingArchive, setIsPendingArchive] = useState(false);
     const isDraggingRef = useRef(false);
     const editDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
     const createDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
@@ -99,6 +105,9 @@ export default function Tasks() {
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+    const [unarchiveStatus, setUnarchiveStatus] = useState<'pending' | 'in_progress' | 'completed'>('pending');
+    const [isUnarchiveDialogOpen, setIsUnarchiveDialogOpen] = useState(false);
+    const [pendingUnarchiveTask, setPendingUnarchiveTask] = useState<Task | null>(null);
 
     const [pagination, setPagination] = useState<PaginationData>({
         total: 0,
@@ -200,6 +209,70 @@ export default function Tasks() {
 
         setPendingDeletes((prev) => [{ id: task.id, task, timerId, visible: true }, ...prev]);
     }; 
+
+    const handleArchiveToggle = async (task: Task, archive: boolean) => {
+        if (archive) {
+            // Archiving: check if form has changes
+            if (hasFormChanges()) {
+                // Form has changes, mark as pending and require save/cancel
+                setIsPendingArchive(true);
+            } else {
+                // No changes, archive directly
+                const payload = { is_hidden: true };
+                try {
+                    const res = await fetch(`/api/tasks/${task.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        setTasks((prev) => prev.map((t) => t.id === data.data.id ? data.data : t));
+                        setIsEditDialogOpen(false);
+                        setEditTaskForm(null);
+                        setOriginalEditTaskForm(null);
+                        setIsPendingArchive(false);
+                    } else {
+                        setDeleteMessage(data?.message || 'Failed to archive task');
+                    }
+                } catch (err) {
+                    setDeleteMessage('Failed to archive task');
+                }
+            }
+        } else {
+            // Unarchiving: show dialog to choose status
+            setPendingUnarchiveTask(task);
+            setUnarchiveStatus('pending');
+            setIsUnarchiveDialogOpen(true);
+        }
+    };
+
+    const performUnarchive = async () => {
+        if (!pendingUnarchiveTask) return;
+        const payload = { is_hidden: false, status: unarchiveStatus };
+        try {
+            const res = await fetch(`/api/tasks/${pendingUnarchiveTask.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setTasks((prev) => prev.map((t) => t.id === data.data.id ? data.data : t));
+                setIsUnarchiveDialogOpen(false);
+                setPendingUnarchiveTask(null);
+                // Close edit modal and clear form
+                setIsEditDialogOpen(false);
+                setEditTaskForm(null);
+                // Switch back to Kanban view to show the card in its new column
+                setShowArchived(false);
+            } else {
+                setDeleteMessage(data?.message || 'Failed to unarchive task');
+            }
+        } catch (err) {
+            setDeleteMessage('Failed to unarchive task');
+        }
+    };
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -337,7 +410,7 @@ export default function Tasks() {
 
     const handleOpenEdit = (task: Task) => {
         // populate edit form
-        setEditTaskForm({
+        const formData = {
             id: task.id,
             title: task.title,
             description: task.description,
@@ -347,10 +420,21 @@ export default function Tasks() {
             user_id: String(task.user_id),
             amount: task.amount ? String(task.amount) : '',
             status: task.status,
-        });
+            is_hidden: !!task.is_hidden,
+        };
+        setEditTaskForm(formData);
+        setOriginalEditTaskForm(formData);
+        setIsPendingArchive(false);
         // ensure clients list is loaded
         fetchClients();
         setIsEditDialogOpen(true);
+    };
+
+    // Check if form has changes compared to original
+    const hasFormChanges = (): boolean => {
+        if (!editTaskForm || !originalEditTaskForm) return false;
+        const fieldsToCheck = ['title', 'description', 'priority', 'due_date', 'client_id', 'amount', 'status'];
+        return fieldsToCheck.some(field => editTaskForm[field] !== originalEditTaskForm[field]);
     };
 
     const handleEditSubmit = async (e: React.FormEvent) => {
@@ -370,6 +454,11 @@ export default function Tasks() {
             status: editTaskForm.status,
         };
 
+        // If archive is pending, add it to the payload
+        if (isPendingArchive) {
+            payload.is_hidden = true;
+        }
+
         try {
             const res = await fetch(`/api/tasks/${editTaskForm.id}`, {
                 method: 'PATCH',
@@ -382,6 +471,8 @@ export default function Tasks() {
                 setTasks((prev) => prev.map((t) => (t.id === data.data.id ? data.data : t)));
                 setIsEditDialogOpen(false);
                 setEditTaskForm(null);
+                setOriginalEditTaskForm(null);
+                setIsPendingArchive(false);
             } else {
                 console.error('Edit failed:', data);
             }
@@ -641,30 +732,51 @@ export default function Tasks() {
 
                                     <div>
                                         <label className="text-sm font-medium">Status</label>
-                                        <Select
-                                            value={editTaskForm.status}
-                                            onValueChange={(value) => setEditTaskForm({ ...editTaskForm, status: value as Task['status'] })}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="pending">Pending</SelectItem>
-                                                <SelectItem value="in_progress">In Progress</SelectItem>
-                                                <SelectItem value="completed">Completed</SelectItem>
-                                            </SelectContent>
-                                        </Select>
+                                        {editTaskForm.is_hidden ? (
+                                            <div className="p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300">
+                                                Archived
+                                            </div>
+                                        ) : (
+                                            <Select
+                                                value={editTaskForm.status}
+                                                onValueChange={(value) => setEditTaskForm({ ...editTaskForm, status: value as Task['status'] })}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="pending">Pending</SelectItem>
+                                                    <SelectItem value="in_progress">In Progress</SelectItem>
+                                                    <SelectItem value="completed">Completed</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center justify-between pt-2">
-                                        <div>
+                                        <div className="flex gap-2">
                                             <Button type="button" variant="destructive" onClick={() => setIsDeleteOpen(true)}>
                                                 Delete
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant={isPendingArchive ? 'default' : (editTaskForm.is_hidden ? 'secondary' : 'outline')}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    handleArchiveToggle(editTaskForm as Task, !editTaskForm.is_hidden);
+                                                }}
+                                            >
+                                                {isPendingArchive ? 'Archive Pending' : (editTaskForm.is_hidden ? 'Unarchive' : 'Archive')}
                                             </Button>
                                         </div>
 
                                         <div className="flex gap-2">
-                                            <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setEditTaskForm(null); }}>
+                                            <Button type="button" variant="outline" onClick={() => { 
+                                                setIsEditDialogOpen(false); 
+                                                setEditTaskForm(null);
+                                                setOriginalEditTaskForm(null);
+                                                setIsPendingArchive(false);
+                                            }}>
                                                 Cancel
                                             </Button>
                                             <Button type="submit">Save</Button>
@@ -691,6 +803,42 @@ export default function Tasks() {
                                     className="bg-red-600 hover:bg-red-700"
                                 >
                                     {isDeleting ? 'Deleting...' : 'Delete'}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
+                    {/* Unarchive Status Selection Dialog */}
+                    <AlertDialog open={isUnarchiveDialogOpen} onOpenChange={setIsUnarchiveDialogOpen}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Unarchive Task</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Select the status for this task when unarchiving
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-sm font-medium">Status</label>
+                                    <Select
+                                        value={unarchiveStatus}
+                                        onValueChange={(value) => setUnarchiveStatus(value as 'pending' | 'in_progress' | 'completed')}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="pending">Pending</SelectItem>
+                                            <SelectItem value="in_progress">In Progress</SelectItem>
+                                            <SelectItem value="completed">Completed</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={performUnarchive}>
+                                    Unarchive
                                 </AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
@@ -767,6 +915,19 @@ export default function Tasks() {
                         </AlertDialogContent>
                     </AlertDialog>                </div>
 
+                {/* Filter for archived tasks */}
+                <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={showArchived}
+                            onChange={(e) => setShowArchived(e.target.checked)}
+                            className="rounded"
+                        />
+                        <span>Mostrar arquivadas</span>
+                    </label>
+                </div>
+
                 {/* Tasks List */}
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
@@ -786,6 +947,45 @@ export default function Tasks() {
                             </p>
                         </div>
                     </motion.div>
+                ) : showArchived ? (
+                    // Show archived tasks as simple cards list (no kanban)
+                    <div className="rounded-2xl p-4">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                            {tasks_list
+                                .filter((t) => t.is_hidden)
+                                .map((task) => (
+                                    <motion.div
+                                        key={task.id}
+                                        initial={{ opacity: 0, y: 12 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="cursor-grab active:cursor-grabbing"
+                                        onClick={() => handleOpenEdit(task)}
+                                    >
+                                        <Card className="overflow-hidden p-3 transform transition-all hover:-translate-y-1 hover:shadow-md bg-white dark:bg-gray-900" style={{ borderLeft: '4px solid var(--primary)' }}>
+                                            <CardContent>
+                                                <div className="mb-3 flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate whitespace-nowrap" title={task.title}>
+                                                            {task.title}
+                                                        </h4>
+                                                        <span className="inline-block mt-1 px-2 py-1 text-xs rounded bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                                            Archived
+                                                        </span>
+                                                    </div>
+                                                    <span className={`rounded-full px-3 py-1 text-xs capitalize ${getPriorityColor(task.priority)}`}>
+                                                        {task.priority}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-2 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                                                    <div className="truncate">{task.client_name}</div>
+                                                    <div className="ml-2 whitespace-nowrap">Due {formatDate(task.due_date)}</div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    </motion.div>
+                                ))}
+                        </div>
+                    </div>
                 ) : (
                     <div className="rounded-2xl p-4">
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -804,7 +1004,7 @@ export default function Tasks() {
                                         {col.title}
                                     </h3>
                                     <span className="text-sm text-sidebar-foreground/70">
-                                        {tasks_list.filter((t) => t.status === col.id).length}
+                                        {tasks_list.filter((t) => t.status === col.id && !t.is_hidden).length}
                                     </span>
                                 </div>
 
@@ -834,7 +1034,7 @@ export default function Tasks() {
                                     className="flex min-h-[120px] flex-col gap-2"
                                 >
                                     {tasks_list
-                                        .filter((t) => t.status === col.id)
+                                        .filter((t) => t.status === col.id && (showArchived ? t.is_hidden : !t.is_hidden))
                                         .map((task, index) => (
                                             <motion.div
                                                 key={task.id}
@@ -899,7 +1099,10 @@ export default function Tasks() {
                 {!loading && tasks_list.length > 0 && (
                     <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
                         <span>
-                            {pagination.total} tasks
+                            {showArchived 
+                                ? `${tasks_list.filter(t => t.is_hidden).length} archived tasks`
+                                : `${tasks_list.filter(t => !t.is_hidden).length} tasks`
+                            }
                         </span>
                     </div>
                 )}

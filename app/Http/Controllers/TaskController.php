@@ -162,7 +162,21 @@ class TaskController extends Controller
                 'user_id' => 'sometimes|required|exists:users,id',
                 'client_id' => 'sometimes|required|exists:clients,id',
                 'invoice_id' => 'nullable|exists:invoices,id',
+                'is_hidden' => 'sometimes|boolean',
             ]);
+
+            // Handle archive/unarchive status updates
+            if (isset($validated['is_hidden'])) {
+                if ($validated['is_hidden']) {
+                    // Archiving: set archived_at and archived_by
+                    $validated['archived_at'] = now();
+                    $validated['archived_by'] = $request->user()?->id;
+                } else {
+                    // Unarchiving: clear archived_at and archived_by
+                    $validated['archived_at'] = null;
+                    $validated['archived_by'] = null;
+                }
+            }
 
             $task->update($validated);
 
@@ -231,4 +245,5 @@ class TaskController extends Controller
             ], 500);
         }
     }
+
 }
