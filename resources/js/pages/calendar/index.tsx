@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -128,6 +128,19 @@ export default function Calendar() {
         }
     };
 
+    const getTaskBadgeColor = (status: string) => {
+        switch (status) {
+            case 'completed':
+                return 'bg-green-500/20 text-green-700 dark:bg-green-500/30 dark:text-green-300';
+            case 'in_progress':
+                return 'bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300';
+            case 'pending':
+                return 'bg-amber-500/20 text-amber-700 dark:bg-amber-500/30 dark:text-amber-300';
+            default:
+                return 'bg-gray-500/20 text-gray-700 dark:bg-gray-500/30 dark:text-gray-300';
+        }
+    };
+
     const handlePreviousMonth = () => {
         setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
     };
@@ -140,7 +153,11 @@ export default function Calendar() {
         setCurrentDate(new Date());
     };
 
-    const dayTasks = selectedDate ? (tasksByDate[format(selectedDate, 'yyyy-MM-dd')] || []) : [];
+    const dayTasks = useMemo(() => {
+        if (!selectedDate) return [];
+        const dateKey = format(selectedDate, 'yyyy-MM-dd');
+        return tasksByDate[dateKey] || [];
+    }, [selectedDate, tasksByDate]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -225,17 +242,16 @@ export default function Calendar() {
                                                     key={dateKey}
                                                     onClick={() => setSelectedDate(day)}
                                                     className={`aspect-square rounded-lg border-2 p-2 text-left transition-all duration-200 ${isSelected
-                                                        ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/30'
-                                                        : 'border-border hover:border-blue-300 dark:hover:border-blue-600'
-                                                        } ${isTodayDate
-                                                            ? 'bg-amber-50 dark:bg-amber-950/20'
-                                                            : 'bg-card'
+                                                        ? 'border-primary bg-primary/10'
+                                                        : isTodayDate
+                                                            ? 'border-primary/50 bg-primary/5 hover:border-primary/70'
+                                                            : 'border-border bg-card hover:border-primary/50'
                                                         }`}
                                                 >
                                                     <div className="space-y-1">
                                                         <div
                                                             className={`text-sm font-semibold ${isTodayDate
-                                                                ? 'text-amber-700 dark:text-amber-300'
+                                                                ? 'text-primary'
                                                                 : 'text-foreground'
                                                                 }`}
                                                         >
@@ -246,7 +262,7 @@ export default function Calendar() {
                                                                 {dayTasks.slice(0, 2).map((task) => (
                                                                     <div
                                                                         key={task.id}
-                                                                        className="truncate rounded bg-blue-500/20 px-1 text-xs text-blue-700 dark:bg-blue-500/30 dark:text-blue-300"
+                                                                        className={`truncate rounded px-1 text-xs ${getTaskBadgeColor(task.status)}`}
                                                                     >
                                                                         {task.title}
                                                                     </div>
@@ -271,7 +287,7 @@ export default function Calendar() {
                     {/* Sidebar - Selected Date Tasks */}
                     <div className="flex flex-col gap-6 overflow-hidden">
                         {selectedDate && (
-                            <Card className="flex flex-col min-h-0">
+                            <Card key={format(selectedDate, 'yyyy-MM-dd')} className="flex flex-col min-h-0">
                                 <CardHeader>
                                     <CardTitle className="text-lg">
                                         {format(selectedDate, 'EEEE, MMMM d')}
@@ -320,7 +336,7 @@ export default function Calendar() {
                                                                     Amount:
                                                                 </span>{' '}
                                                                 <span className="text-muted-foreground">
-                                                                    €{typeof task.amount === 'string' ? parseFloat(task.amount).toFixed(2) : (task.amount as number).toFixed(2)}
+                                                                    {typeof task.amount === 'string' ? parseFloat(task.amount).toFixed(2) : (task.amount as number).toFixed(2)} €
                                                                 </span>
                                                             </div>
                                                         )}
