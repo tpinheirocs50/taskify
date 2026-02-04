@@ -145,7 +145,7 @@ export default function Welcome({
                                         </div>
                                         <div className="rounded-lg bg-white/50 p-4 dark:bg-[#2a2a28]">
                                             <Users className="mx-auto h-8 w-8 text-[#1b1b18] dark:text-[#EDEDEC]" />
-                                            <p className="mt-2 text-xs font-medium">Teams</p>
+                                            <p className="mt-2 text-xs font-medium">Clients</p>
                                         </div>
                                         <div className="rounded-lg bg-white/50 p-4 dark:bg-[#2a2a28]">
                                             <BarChart3 className="mx-auto h-8 w-8 text-[#1b1b18] dark:text-[#EDEDEC]" />
