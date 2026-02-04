@@ -206,7 +206,11 @@ export default function Tasks() {
             const data = await response.json();
 
             if (data.success) {
-                setTasks(data.data);
+                //Filter task for current user only
+                const userTasks = data.data.filter(
+                    (task: Task) => task.user_id === auth ?.user?.id
+                );
+                setTasks(userTasks);
                 setPagination(data.pagination);
             }
             setLoading(false);
