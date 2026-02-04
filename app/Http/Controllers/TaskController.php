@@ -162,7 +162,56 @@ class TaskController extends Controller
                 'user_id' => 'sometimes|required|exists:users,id',
                 'client_id' => 'sometimes|required|exists:clients,id',
                 'invoice_id' => 'nullable|exists:invoices,id',
+                'is_hidden' => 'sometimes|boolean',
             ]);
+
+            // Check if task is protected (linked to invoice with sensitive status)
+            if ($task->invoice_id) {
+                $invoice = $task->invoice()->first();
+                if ($invoice && in_array($invoice->status, ['sent', 'paid', 'overdue'])) {
+                    // Task is protected - only allow archive/unarchive and status change to 'completed'
+                    $isArchiving = isset($validated['is_hidden']) && $validated['is_hidden'];
+                    $isUnarchiving = isset($validated['is_hidden']) && !$validated['is_hidden'];
+                    $isChangingToCompleted = isset($validated['status']) && $validated['status'] === 'completed';
+                    
+                    // If unarchiving to a status that is not completed, show specific message
+                    if ($isUnarchiving && isset($validated['status']) && !$isChangingToCompleted) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This task has an associated invoice. Please choose "Completed" to unarchive.',
+                        ], 403);
+                    }
+                    
+                    // Allow status change to completed when archiving or unarchiving
+                    if (isset($validated['status']) && !($isChangingToCompleted && ($isArchiving || $isUnarchiving))) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This task is linked to an invoice and cannot be modified. You can only archive it.',
+                        ], 403);
+                    }
+                    
+                    // Block any other modifications
+                    if (isset($validated['title']) || isset($validated['description']) || isset($validated['priority']) || isset($validated['amount']) || isset($validated['due_date'])) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This task is linked to an invoice and cannot be modified. You can only archive it.',
+                        ], 403);
+                    }
+                }
+            }
+
+            // Handle archive/unarchive status updates
+            if (isset($validated['is_hidden'])) {
+                if ($validated['is_hidden']) {
+                    // Archiving: set archived_at and archived_by
+                    $validated['archived_at'] = now();
+                    $validated['archived_by'] = $request->user()?->id;
+                } else {
+                    // Unarchiving: clear archived_at and archived_by
+                    $validated['archived_at'] = null;
+                    $validated['archived_by'] = null;
+                }
+            }
 
             $task->update($validated);
 
@@ -212,6 +261,18 @@ class TaskController extends Controller
     {
         try {
             $task = Task::findOrFail($id);
+
+            // Check if task is protected (linked to invoice with sensitive status)
+            if ($task->invoice_id) {
+                $invoice = $task->invoice()->first();
+                if ($invoice && in_array($invoice->status, ['sent', 'paid', 'overdue'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This task is linked to an invoice and cannot be deleted. You can only archive it.',
+                    ], 403);
+                }
+            }
+
             $task->delete();
 
             return response()->json([
@@ -231,4 +292,5 @@ class TaskController extends Controller
             ], 500);
         }
     }
+
 }
