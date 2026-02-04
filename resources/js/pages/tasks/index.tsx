@@ -142,19 +142,32 @@ export default function Tasks() {
         el.style.height = `${target}px`;
     }, [newTaskForm.description, isCreateDialogOpen]);
 
-    // Confirm deletion of a task (optimistic with undo)
-    const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
-    const [pendingDeleteTimer, setPendingDeleteTimer] = useState<number | null>(null);
-    const [showUndo, setShowUndo] = useState(false);
+    // Confirm deletion of tasks (support multiple optimistic deletes with undo)
+    const [pendingDeletes, setPendingDeletes] = useState<{
+        id: number;
+        task: Task;
+        timerId: number;
+        visible: boolean;
+    }[]>([]);
+
+    // Duration for undo in milliseconds (use same value for timer and progress animation)
+    const UNDO_TIMEOUT = 5000;
 
     const performDeleteNow = async (task: Task) => {
+        // Remove pending entry and cancel its timer if present
+        setPendingDeletes((prev) => {
+            const entry = prev.find((p) => p.id === task.id);
+            if (entry && entry.timerId) {
+                clearTimeout(entry.timerId);
+            }
+            return prev.filter((p) => p.id !== task.id);
+        });
+
         try {
             const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
             const data = await res.json();
 
-            if (res.ok && data.success) {
-                setDeleteMessage('Task deleted successfully');
-            } else {
+            if (!res.ok || !data.success) {
                 console.error('Delete failed:', data);
                 // Reinsert task on failure
                 setTasks((prev) => [task, ...prev]);
@@ -165,40 +178,28 @@ export default function Tasks() {
             setTasks((prev) => [task, ...prev]);
             setDeleteMessage('Failed to delete task');
         } finally {
-            setPendingDeleteTask(null);
-            setPendingDeleteTimer(null);
-            setShowUndo(false);
             setIsDeleting(false);
         }
-    };
+    }; 
 
     const handleConfirmDelete = () => {
         if (!editTaskForm) return;
         const task = editTaskForm as Task;
 
-        // If there's already a pending delete, flush it immediately
-        if (pendingDeleteTask) {
-            if (pendingDeleteTimer) {
-                clearTimeout(pendingDeleteTimer);
-            }
-            performDeleteNow(pendingDeleteTask);
-        }
-
         // Optimistically remove from UI
         setTasks((prev) => prev.filter((t) => t.id !== task.id));
-        setPendingDeleteTask(task);
         setIsDeleteOpen(false);
         setIsEditDialogOpen(false);
         setEditTaskForm(null);
-        setShowUndo(true);
         setIsDeleting(false);
 
-        // Start undo timer (5s)
-        const timer = window.setTimeout(() => {
+        // Start undo timer for this specific task
+        const timerId = window.setTimeout(() => {
             performDeleteNow(task);
-        }, 5000);
-        setPendingDeleteTimer(timer);
-    };
+        }, UNDO_TIMEOUT);
+
+        setPendingDeletes((prev) => [{ id: task.id, task, timerId, visible: true }, ...prev]);
+    }; 
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -695,33 +696,58 @@ export default function Tasks() {
                         </AlertDialogContent>
                     </AlertDialog>
 
-                    {/* Undo snackbar */}
-                    {showUndo && pendingDeleteTask && (
-                        <div className="fixed left-6 bottom-6 z-50">
-                            <div className="flex items-center gap-4 rounded-md border border-gray-200 bg-white px-4 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
-                                <div className="text-sm text-gray-800 dark:text-gray-100">Task deleted</div>
-                                <div className="flex items-center gap-2">
-                                    <Button variant="link" onClick={() => {
-                                        // undo delete
-                                        if (pendingDeleteTimer) {
-                                            clearTimeout(pendingDeleteTimer);
-                                        }
-                                        setTasks((prev) => [pendingDeleteTask, ...prev]);
-                                        setPendingDeleteTask(null);
-                                        setShowUndo(false);
-                                        setDeleteMessage('Deletion undone');
-                                    }}>
-                                        Undo
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => {
-                                        // dismiss snackbar (will still execute delete after timeout)
-                                        setShowUndo(false);
-                                    }}>
-                                        Dismiss
-                                    </Button>
-                                </div>
+                    {/* Undo snackbars (one per pending delete) with progress bar */}
+                    {pendingDeletes.length > 0 && (
+                        <>
+                            <style>{`
+                                @keyframes progressBar {
+                                    from { width: 100%; }
+                                    to { width: 0%; }
+                                }
+                            `}</style>
+                            <div className="fixed left-6 bottom-6 z-50 flex flex-col gap-2">
+                                {pendingDeletes.map((p) =>
+                                    p.visible ? (
+                                        <div key={p.id} className="w-80 rounded-md border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+                                            <div className="flex items-center gap-4 px-4 py-2">
+                                                <div className="text-sm text-gray-800 dark:text-gray-100">
+                                                    Task deleted: <span className="font-medium">{p.task.title}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 ml-auto">
+                                                    <Button variant="link" onClick={() => {
+                                                        // undo: cancel timer and reinsert task
+                                                        clearTimeout(p.timerId);
+                                                        setTasks((prev) => [p.task, ...prev]);
+                                                        setPendingDeletes((prev) => prev.filter((x) => x.id !== p.id));
+                                                    }}>
+                                                        Undo
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" onClick={() => {
+                                                        // dismiss snackbar (deletion still happens after timeout)
+                                                        setPendingDeletes((prev) => prev.map((x) => x.id === p.id ? { ...x, visible: false } : x));
+                                                    }}>
+                                                        Dismiss
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            {/* Progress bar using CSS animation; color follows current --primary variable */}
+                                            <div className="h-1 w-full bg-gray-200 dark:bg-gray-700">
+                                                <div
+                                                    role="progressbar"
+                                                    aria-label={`Time remaining to undo deletion of ${p.task.title}`}
+                                                    style={{
+                                                        height: '100%',
+                                                        background: 'var(--primary)',
+                                                        animation: `progressBar ${UNDO_TIMEOUT}ms linear forwards`,
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : null,
+                                )}
                             </div>
-                        </div>
+                        </>
                     )}
 
                     {/* Post-action Message Dialog */}
