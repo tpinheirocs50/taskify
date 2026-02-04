@@ -200,25 +200,56 @@ export default function Tasks() {
         setPendingDeleteTimer(timer);
     };
 
-    const fetchTasks = async (page = 1) => { 
+    const fetchTasks = async () => {
+        setLoading(true);
         try {
-            const response = await fetch(`/api/tasks?page=${page}`);
-            const data = await response.json();
+            let page = 1;
+            let allTasks: Task[] = [];
+            let lastPage = 1;
 
-            if (data.success) {
-                //Filter task for current user only
-                const userTasks = data.data.filter(
-                    (task: Task) => task.user_id === auth ?.user?.id
-                );
-                setTasks(userTasks);
-                setPagination(data.pagination);
+            // Fetch pages until we've retrieved all pages from the backend
+            while (true) {
+                const response = await fetch(`/api/tasks?page=${page}`);
+                const data = await response.json();
+
+                if (!data.success) break;
+
+                // Filter tasks for current user only and append
+                const userTasks = data.data.filter((task: Task) => task.user_id === auth?.user?.id);
+                allTasks = [...allTasks, ...userTasks];
+
+                lastPage = data.pagination?.last_page || 1;
+                if (page >= lastPage) {
+                    // Adjust pagination to reflect what we actually display (all loaded tasks)
+                    setPagination({
+                        total: allTasks.length,
+                        per_page: allTasks.length || data.pagination?.per_page || 15,
+                        current_page: 1,
+                        last_page: 1,
+                    });
+                    break;
+                }
+
+                page++;
             }
-            setLoading(false);
+
+            setTasks(allTasks);
         } catch (error) {
             console.error('Error fetching tasks:', error);
+        } finally {
             setLoading(false);
         }
     };
+
+    // Keep pagination in sync with the actual tasks list so the footer updates automatically
+    useEffect(() => {
+        setPagination({
+            total: tasks_list.length,
+            per_page: tasks_list.length || 15,
+            current_page: 1,
+            last_page: 1,
+        });
+    }, [tasks_list]);
 
     const fetchClients = async () => {
         try {
@@ -838,17 +869,11 @@ export default function Tasks() {
                 {/* Help Box */}
 
 
-                {/* Pagination Info */}
+                {/* Total tasks */}
                 {!loading && tasks_list.length > 0 && (
                     <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
                         <span>
-                            Showing{' '}
-                            {(pagination.current_page - 1) * pagination.per_page + 1} to{' '}
-                            {Math.min(
-                                pagination.current_page * pagination.per_page,
-                                pagination.total,
-                            )}{' '}
-                            of {pagination.total} tasks
+                            {pagination.total} tasks
                         </span>
                     </div>
                 )}
