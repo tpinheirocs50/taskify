@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Plus } from 'lucide-react';
+import { CheckCircle2, Plus, Search, Filter, Calendar, Flag, Archive, RotateCcw } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -488,6 +488,39 @@ export default function Tasks() {
 
     const formatDate = (date: string) => {
         return new Date(date).toLocaleDateString('pt-PT');
+    };
+
+    const isOverdue = (dueDate: string, status: string): boolean => {
+        if (status === 'completed') return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const due = new Date(dueDate);
+        due.setHours(0, 0, 0, 0);
+        return due < today;
+    };
+
+    const getDueDateColor = (dueDate: string, status: string): string => {
+        if (status === 'completed') return 'text-gray-600 dark:text-gray-400';
+        if (isOverdue(dueDate, status)) return 'text-red-600 dark:text-red-400 font-medium';
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const due = new Date(dueDate);
+        due.setHours(0, 0, 0, 0);
+        if (due <= tomorrow) return 'text-orange-600 dark:text-orange-400 font-medium';
+        return 'text-gray-600 dark:text-gray-400';
+    };
+
+    const hasActiveFilters = (): boolean => {
+        return searchQuery.trim() !== '' || statusFilter !== 'all' || priorityFilter !== 'all' || dueDateFilter !== 'all';
+    };
+
+    const resetFilters = () => {
+        setSearchQuery('');
+        setStatusFilter('all');
+        setPriorityFilter('all');
+        setDueDateFilter('all');
     };
 
     // Filter tasks based on all criteria
@@ -995,7 +1028,7 @@ export default function Tasks() {
                     </AlertDialog>                </div>
 
                 {/* Filters Section */}
-                <div className="space-y-4">
+                <div className="space-y-3">
                     <div className="grid gap-3 grid-cols-2 md:grid-cols-6">
                         <Input
                             placeholder="Search by title, client or company"
@@ -1059,6 +1092,19 @@ export default function Tasks() {
                             </SelectContent>
                         </Select>
                     </div>
+                    {hasActiveFilters() && (
+                        <div className="flex justify-end">
+                            <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={resetFilters}
+                                className="gap-2"
+                            >
+                                <RotateCcw className="h-4 w-4" />
+                                Reset filters
+                            </Button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Tasks List */}
@@ -1107,13 +1153,17 @@ export default function Tasks() {
                                                             Archived
                                                         </span>
                                                     </div>
-                                                    <span className={`rounded-full px-3 py-1 text-xs capitalize ${getPriorityColor(task.priority)}`}>
+                                                    <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getPriorityColor(task.priority)}`}>
+                                                        <Flag className="h-3 w-3" />
                                                         {task.priority}
                                                     </span>
                                                 </div>
-                                                <div className="mt-2 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-                                                    <div className="truncate">{task.client_name}</div>
-                                                    <div className="ml-2 whitespace-nowrap">Due {formatDate(task.due_date)}</div>
+                                                <div className="mt-2 flex items-center justify-between text-xs">
+                                                    <div className="truncate text-gray-600 dark:text-gray-400">{task.client_name} {task.client_company ? `(${task.client_company})` : ''}</div>
+                                                    <div className={`ml-2 whitespace-nowrap flex items-center gap-1 ${getDueDateColor(task.due_date, task.status)}`}>
+                                                        <Calendar className="h-3 w-3" />
+                                                        Due {formatDate(task.due_date)}
+                                                    </div>
                                                 </div>
                                             </CardContent>
                                         </Card>
@@ -1201,14 +1251,18 @@ export default function Tasks() {
                                                                             {task.title}
                                                                         </h4> 
                                                                     </div>
-                                                                    <span className={`rounded-full px-3 py-1 text-xs capitalize ${getPriorityColor(task.priority)}`}>
+                                                                    <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getPriorityColor(task.priority)}`}>
+                                                                        <Flag className="h-3 w-3" />
                                                                         {task.priority}
                                                                     </span>
                                                                 </div>
 
                                                                 <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-                                                                    <div className="truncate">{task.client_name}</div>
-                                                                    <div className="ml-2 whitespace-nowrap">Due {formatDate(task.due_date)}</div>
+                                                                    <div className="truncate">{task.client_name} {task.client_company ? `(${task.client_company})` : ''}</div>
+                                                                <div className={`ml-2 whitespace-nowrap flex items-center gap-1 text-xs ${getDueDateColor(task.due_date, task.status)}`}>
+                                                                    <Calendar className="h-3 w-3" />
+                                                                    Due {formatDate(task.due_date)}
+                                                                </div>
                                                                 </div>
                                                             </div>
 
