@@ -135,7 +135,12 @@ export default function Clients({ clients: clientsList }: Props) {
       let lastPage = 1;
 
       do {
-        const response = await fetch(`/api/clients?page=${currentPage}`);
+        const response = await fetch(`/api/clients?page=${currentPage}`, {
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+          },
+        });
         const data = await response.json();
 
         if (data.success) {
@@ -163,7 +168,12 @@ export default function Clients({ clients: clientsList }: Props) {
       let lastPage = 1;
 
       do {
-        const response = await fetch(`/api/tasks?page=${currentPage}`);
+        const response = await fetch(`/api/tasks?page=${currentPage}`, {
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+          },
+        });
         const data = await response.json();
 
         if (data.success) {
@@ -212,7 +222,9 @@ export default function Clients({ clients: clientsList }: Props) {
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          Accept: 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
           name: editName,
           tin: editTin,
@@ -251,7 +263,9 @@ export default function Clients({ clients: clientsList }: Props) {
           'X-CSRF-TOKEN': document
             .querySelector('meta[name="csrf-token"]')
             ?.getAttribute('content') || '',
+          Accept: 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
           name,
           tin,
@@ -297,7 +311,9 @@ export default function Clients({ clients: clientsList }: Props) {
           'X-CSRF-TOKEN': document
             .querySelector('meta[name="csrf-token"]')
             ?.getAttribute('content') || '',
+          Accept: 'application/json',
         },
+        credentials: 'same-origin',
       });
 
       const data = await response.json();

@@ -14,7 +14,8 @@ class ClientController extends Controller
     public function index(): JsonResponse
     {
         try {
-            $clients = Client::orderBy('id', 'desc')
+            $clients = Client::where('user_id', request()->user()->id)
+                ->orderBy('id', 'desc')
                 ->paginate(15);
 
             return response()->json([
@@ -52,7 +53,10 @@ class ClientController extends Controller
                 'isActive' => 'sometimes|boolean',
             ]);
 
-            $client = Client::create($validated);
+            $client = Client::create([
+                ...$validated,
+                'user_id' => $request->user()->id,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -80,7 +84,8 @@ class ClientController extends Controller
     public function show(string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
+            $client = Client::where('user_id', $request->user()->id)
+                ->findOrFail($id);
 
             return response()->json([
                 'success' => true,
@@ -106,7 +111,8 @@ class ClientController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
+            $client = Client::where('user_id', $request->user()->id)
+                ->findOrFail($id);
 
             $validated = $request->validate([
                 'name' => 'sometimes|required|string|max:100',
@@ -151,7 +157,8 @@ class ClientController extends Controller
     public function destroy(string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
+            $client = Client::where('user_id', request()->user()->id)
+                ->findOrFail($id);
             $client->delete();
 
             return response()->json([
