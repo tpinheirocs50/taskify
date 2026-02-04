@@ -159,11 +159,13 @@ class ClientController extends Controller
         try {
             $client = Client::where('user_id', request()->user()->id)
                 ->findOrFail($id);
-            $client->delete();
+            $client->isActive = false;
+            $client->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Client deleted successfully',
+                'message' => 'Client deactivated successfully',
+                'data' => $client->fresh(),
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([

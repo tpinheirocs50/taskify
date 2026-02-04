@@ -76,7 +76,7 @@ function getAvatarColor(id: number): string {
 export default function Clients({ clients: clientsList }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [includeTin, setIncludeTin] = useState(false);
-  const [onlyActive, setOnlyActive] = useState(false);
+  const [onlyInactive, setOnlyInactive] = useState(false);
   const [clientsState, setClients] = useState<Client[]>(clientsList || []);
   const [loading, setLoading] = useState(false);
 
@@ -125,7 +125,7 @@ export default function Clients({ clients: clientsList }: Props) {
   // Reset to first page when search, view mode or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, showAll, includeTin, onlyActive]);
+  }, [searchQuery, showAll, includeTin, onlyInactive]);
 
   const fetchClients = async () => {
     setLoading(true);
@@ -335,7 +335,11 @@ export default function Clients({ clients: clientsList }: Props) {
   const query = searchQuery.trim().toLowerCase();
 
   const filtered = clientsState.filter((client) => {
-    if (onlyActive && client.isActive === false) return false;
+    if (onlyInactive) {
+      if (client.isActive !== false) return false;
+    } else if (client.isActive === false) {
+      return false;
+    }
     if (!query) return true;
 
     const nameMatch = client.name.toLowerCase().includes(query);
@@ -383,7 +387,7 @@ export default function Clients({ clients: clientsList }: Props) {
     <AppLayout breadcrumbs={breadcrumbs}>
       <Head title="Clients" />
 
-      <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
+      <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-6">
         <div className="flex justify-between items-center mb-2">
           <div>
             <h1 className="text-2xl font-bold text-card-foreground">Clients</h1>
@@ -392,7 +396,7 @@ export default function Clients({ clients: clientsList }: Props) {
 
           <Dialog open={isCreateOpen} onOpenChange={(open) => setIsCreateOpen(open)}>
             <DialogTrigger asChild>
-              <Button className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-xs">+ Add Client</Button>
+              <Button>Add Client</Button>
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
@@ -458,8 +462,8 @@ export default function Clients({ clients: clientsList }: Props) {
 
           <div className="flex gap-3 mt-2 md:mt-0 items-center">
             <div className="flex items-center gap-2">
-              <Checkbox id="filter-active" checked={onlyActive} onCheckedChange={(v) => setOnlyActive(Boolean(v))} className="rounded-full" />
-              <Label htmlFor="filter-active">Ativos</Label>
+              <Checkbox id="filter-inactive" checked={onlyInactive} onCheckedChange={(v) => setOnlyInactive(Boolean(v))} className="rounded-full" />
+              <Label htmlFor="filter-inactive">Inativos</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="include-tin" checked={includeTin} onCheckedChange={(v) => setIncludeTin(Boolean(v))} className="rounded-full" />
