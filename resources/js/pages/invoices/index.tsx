@@ -91,6 +91,7 @@ interface Task {
     user_name?: string;
     client_name?: string;
     client_company?: string;
+    is_hidden?: boolean;
 }
 
 interface InvoiceStats {
@@ -201,7 +202,7 @@ export default function Invoices() {
             } while (currentPage <= lastPage);
 
             const tasks = allTasks.filter(
-                (task) => task.invoice_id === invoiceId && task.status === 'completed'
+                (task) => task.invoice_id === invoiceId && task.status === 'completed' && !task.is_hidden
             );
             setInvoiceTasks(tasks);
         } catch (error) {
@@ -233,7 +234,8 @@ export default function Invoices() {
             const userAvailableTasks = allTasks.filter(
                 (task) => task.user_id === currentUserId &&
                     task.invoice_id === null &&
-                    task.status === 'completed'
+                    task.status === 'completed' &&
+                    !task.is_hidden
             );
 
             setAvailableTasks(userAvailableTasks);
@@ -664,7 +666,7 @@ export default function Invoices() {
                             <div className="py-4">
                                 {availableTasks.length === 0 ? (
                                     <div className="text-center py-8 text-muted-foreground">
-                                        No available tasks. All your tasks are already assigned to invoices.
+                                        No available tasks.
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
