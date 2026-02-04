@@ -66,4 +66,12 @@ class Task extends Model
             'archived_by' => null,
         ]);
     }
+
+    /**
+     * Relationship: Task belongs to Invoice
+     */
+    public function invoice()
+    {
+        return $this->belongsTo(Invoice::class);
+    }
 }

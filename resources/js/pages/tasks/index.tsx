@@ -200,6 +200,13 @@ export default function Tasks() {
         if (!editTaskForm) return;
         const task = editTaskForm as Task;
 
+        // Check if task is protected before allowing delete
+        if (isTaskProtected(task)) {
+            setDeleteMessage('This task has an associated invoice and cannot be deleted. You can only archive it.');
+            setIsDeleteOpen(false);
+            return;
+        }
+
         // Optimistically remove from UI
         setTasks((prev) => prev.filter((t) => t.id !== task.id));
         setIsDeleteOpen(false);
@@ -223,7 +230,11 @@ export default function Tasks() {
                 setIsPendingArchive(true);
             } else {
                 // No changes, archive directly
-                const payload = { is_hidden: true };
+                const payload: any = { is_hidden: true };
+                // If task is protected (has invoice with sensitive status), set to completed
+                if (isTaskProtected(task)) {
+                    payload.status = 'completed';
+                }
                 try {
                     const res = await fetch(`/api/tasks/${task.id}`, {
                         method: 'PATCH',
@@ -245,15 +256,52 @@ export default function Tasks() {
                 }
             }
         } else {
-            // Unarchiving: show dialog to choose status
-            setPendingUnarchiveTask(task);
-            setUnarchiveStatus('pending');
-            setIsUnarchiveDialogOpen(true);
+            // Unarchiving: if protected, go directly to completed; otherwise show dialog
+            if (isTaskProtected(task)) {
+                // Protected task: unarchive directly to completed
+                performUnarchiveProtected(task);
+            } else {
+                // Normal task: show dialog to choose status
+                setPendingUnarchiveTask(task);
+                setUnarchiveStatus('pending');
+                setIsUnarchiveDialogOpen(true);
+            }
+        }
+    };
+
+    const performUnarchiveProtected = async (task: Task) => {
+        const payload = { is_hidden: false, status: 'completed' };
+        try {
+            const res = await fetch(`/api/tasks/${task.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setTasks((prev) => prev.map((t) => t.id === data.data.id ? data.data : t));
+                setIsEditDialogOpen(false);
+                setEditTaskForm(null);
+                setOriginalEditTaskForm(null);
+                setShowArchived(false);
+            } else {
+                setDeleteMessage(data?.message || 'Failed to unarchive task');
+            }
+        } catch (err) {
+            setDeleteMessage('Failed to unarchive task');
         }
     };
 
     const performUnarchive = async () => {
         if (!pendingUnarchiveTask) return;
+        
+        // Check if task is protected and status is not "completed"
+        if (isTaskProtected(pendingUnarchiveTask) && unarchiveStatus !== 'completed') {
+            setDeleteMessage('This task has an associated invoice. Please choose "Completed" to unarchive.');
+            setIsUnarchiveDialogOpen(false);
+            return;
+        }
+        
         const payload = { is_hidden: false, status: unarchiveStatus };
         try {
             const res = await fetch(`/api/tasks/${pendingUnarchiveTask.id}`, {
@@ -426,6 +474,8 @@ export default function Tasks() {
             amount: task.amount ? String(task.amount) : '',
             status: task.status,
             is_hidden: !!task.is_hidden,
+            invoice_id: task.invoice_id,
+            invoice_status: task.invoice_status,
         };
         setEditTaskForm(formData);
         setOriginalEditTaskForm(formData);
@@ -462,6 +512,10 @@ export default function Tasks() {
         // If archive is pending, add it to the payload
         if (isPendingArchive) {
             payload.is_hidden = true;
+            // If task is protected, also set status to completed
+            if (isTaskProtected(editTaskForm as Task)) {
+                payload.status = 'completed';
+            }
         }
 
         try {
@@ -479,10 +533,12 @@ export default function Tasks() {
                 setOriginalEditTaskForm(null);
                 setIsPendingArchive(false);
             } else {
-                console.error('Edit failed:', data);
+                // Show error message (for 403 or other errors)
+                setDeleteMessage(data?.message || 'Failed to update task');
             }
         } catch (err) {
             console.error('Failed to update task', err);
+            setDeleteMessage('Failed to update task');
         }
     };
 
@@ -521,6 +577,12 @@ export default function Tasks() {
         setStatusFilter('all');
         setPriorityFilter('all');
         setDueDateFilter('all');
+    };
+
+    // Check if task is protected (attached to invoice with sensitive status)
+    const isTaskProtected = (task: Task): boolean => {
+        if (!task.invoice_id || !task.invoice_status) return false;
+        return ['sent', 'paid', 'overdue'].includes(task.invoice_status);
     };
 
     // Filter tasks based on all criteria
@@ -742,12 +804,30 @@ export default function Tasks() {
                     <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
-                                <DialogTitle>Edit Task</DialogTitle>
-                                <DialogDescription>Update task details and move between states</DialogDescription>
+                                <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                        <DialogTitle>Edit Task</DialogTitle>
+                                        <DialogDescription>Update task details and move between states</DialogDescription>
+                                    </div>
+                                    {editTaskForm && isTaskProtected(editTaskForm as Task) && (
+                                        <Badge variant="secondary" className="ml-auto flex-shrink-0">
+                                            <Archive className="h-3 w-3 mr-1" />
+                                            Protected
+                                        </Badge>
+                                    )}
+                                </div>
                             </DialogHeader>
 
                             {editTaskForm && (
-                                <form onSubmit={handleEditSubmit} className="space-y-4">
+                                <>
+                                    {isTaskProtected(editTaskForm as Task) && (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 p-3">
+                                            <p className="text-sm text-amber-800 dark:text-amber-200">
+                                                <strong>This task is linked to an invoice</strong> and cannot have its status changed or be deleted. When archived, it will be automatically marked as completed.
+                                            </p>
+                                        </div>
+                                    )}
+                                    <form onSubmit={handleEditSubmit} className="space-y-4">
                                     <div>
                                         <label className="text-sm font-medium">Title *</label>
                                         <Input
@@ -837,6 +917,7 @@ export default function Tasks() {
                                             <Select
                                                 value={editTaskForm.status}
                                                 onValueChange={(value) => setEditTaskForm({ ...editTaskForm, status: value as Task['status'] })}
+                                                disabled={isTaskProtected(editTaskForm as Task)}
                                             >
                                                 <SelectTrigger>
                                                     <SelectValue />
@@ -852,9 +933,11 @@ export default function Tasks() {
 
                                     <div className="flex items-center justify-between pt-2">
                                         <div className="flex gap-2">
-                                            <Button type="button" variant="destructive" onClick={() => setIsDeleteOpen(true)}>
-                                                Delete
-                                            </Button>
+                                            {!isTaskProtected(editTaskForm as Task) && (
+                                                <Button type="button" variant="destructive" onClick={() => setIsDeleteOpen(true)}>
+                                                    Delete
+                                                </Button>
+                                            )}
                                             <Button
                                                 type="button"
                                                 variant={isPendingArchive ? 'default' : (editTaskForm.is_hidden ? 'secondary' : 'outline')}
@@ -879,7 +962,8 @@ export default function Tasks() {
                                             <Button type="submit">Save</Button>
                                         </div>
                                     </div>
-                                </form>
+                                    </form>
+                                </>
                             )}
                         </DialogContent>
                     </Dialog>
@@ -915,6 +999,13 @@ export default function Tasks() {
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <div className="space-y-3">
+                                {pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask) && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 p-3">
+                                        <p className="text-sm text-amber-800 dark:text-amber-200">
+                                            <strong>This task has an associated invoice.</strong> You can only unarchive it to "Completed" status.
+                                        </p>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="text-sm font-medium">Status</label>
                                     <Select
@@ -925,8 +1016,8 @@ export default function Tasks() {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="pending">Pending</SelectItem>
-                                            <SelectItem value="in_progress">In Progress</SelectItem>
+                                            <SelectItem value="pending" disabled={pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>Pending</SelectItem>
+                                            <SelectItem value="in_progress" disabled={pendingUnarchiveTask && isTaskProtected(pendingUnarchiveTask)}>In Progress</SelectItem>
                                             <SelectItem value="completed">Completed</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -1199,6 +1290,11 @@ export default function Tasks() {
                                         const id = Number(idStr);
                                         const task = tasks_list.find((t) => t.id === id);
                                         if (!task || task.status === col.id) return;
+
+                                        if (isTaskProtected(task)) {
+                                            setDeleteMessage('This task has an associated invoice, so its status cannot be changed.');
+                                            return;
+                                        }
 
                                         // Optimistic update
                                         setTasks((prev) =>
