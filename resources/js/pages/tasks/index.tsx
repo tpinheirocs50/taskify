@@ -862,11 +862,26 @@ export default function Tasks() {
                                                     Task deleted: <span className="font-medium">{p.task.title}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 ml-auto">
-                                                    <Button variant="link" onClick={() => {
-                                                        // undo: cancel timer and reinsert task
+                                                    <Button variant="link" onClick={async () => {
+                                                        // undo: cancel timer and fetch fresh task data from server
                                                         clearTimeout(p.timerId);
-                                                        setTasks((prev) => [p.task, ...prev]);
                                                         setPendingDeletes((prev) => prev.filter((x) => x.id !== p.id));
+                                                        
+                                                        try {
+                                                            const res = await fetch(`/api/tasks/${p.task.id}`);
+                                                            const data = await res.json();
+                                                            if (res.ok && data.success && data.data) {
+                                                                // Reinsert with fresh data from server
+                                                                setTasks((prev) => [data.data, ...prev]);
+                                                            } else {
+                                                                // Fallback to cached task if fetch fails
+                                                                setTasks((prev) => [p.task, ...prev]);
+                                                            }
+                                                        } catch (err) {
+                                                            // Fallback to cached task if fetch fails
+                                                            console.error('Failed to fetch task on undo:', err);
+                                                            setTasks((prev) => [p.task, ...prev]);
+                                                        }
                                                     }}>
                                                         Undo
                                                     </Button>
