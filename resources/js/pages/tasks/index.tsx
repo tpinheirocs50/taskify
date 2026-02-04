@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Plus, Search, Filter, Calendar, Flag, Archive, RotateCcw } from 'lucide-react';
+import { Popover } from '@headlessui/react';
+import { DayPicker } from 'react-day-picker';
+import { enUS } from 'date-fns/locale';
+import { format, parseISO } from 'date-fns';
 import {
     Dialog,
     DialogContent,
@@ -43,6 +47,86 @@ const breadcrumbs: BreadcrumbItem[] = [
         href: tasks().url,
     },
 ];
+
+type DatePickerProps = {
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+};
+
+const DatePicker = ({ value, onChange, placeholder = 'Select date' }: DatePickerProps) => {
+    const selected = value ? parseISO(value) : undefined;
+
+    return (
+        <Popover className="relative">
+            {({ close }) => (
+                <>
+                    <Popover.Button className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground">
+                        <span className={value ? '' : 'text-muted-foreground'}>
+                            {value ? format(parseISO(value), 'yyyy-MM-dd') : placeholder}
+                        </span>
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                    </Popover.Button>
+                    <Popover.Panel className="absolute z-50 mt-2 rounded-lg border border-border bg-popover p-3 shadow-lg">
+                        <DayPicker
+                            mode="single"
+                            selected={selected}
+                            onSelect={(day) => {
+                                if (day) {
+                                    onChange(format(day, 'yyyy-MM-dd'));
+                                    close();
+                                }
+                            }}
+                            locale={enUS}
+                            showOutsideDays
+                            classNames={{
+                                months: 'flex flex-col',
+                                month: 'space-y-4',
+                                caption: 'flex items-center justify-between px-1',
+                                caption_label: 'text-sm font-medium',
+                                nav: 'flex items-center gap-1',
+                                nav_button: 'h-7 w-7 rounded-md border border-input bg-background text-foreground hover:bg-accent',
+                                table: 'w-full border-collapse space-y-1',
+                                head_row: 'flex',
+                                head_cell: 'w-9 text-[0.8rem] font-normal text-muted-foreground',
+                                row: 'flex w-full mt-1',
+                                cell: 'h-9 w-9 text-center text-sm p-0',
+                                day: 'h-9 w-9 rounded-md hover:bg-accent',
+                                day_selected: 'bg-primary text-primary-foreground hover:bg-primary',
+                                day_today: 'border border-primary',
+                                day_outside: 'text-muted-foreground opacity-50',
+                            }}
+                        />
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    onChange(format(new Date(), 'yyyy-MM-dd'));
+                                    close();
+                                }}
+                            >
+                                Today
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    onChange('');
+                                    close();
+                                }}
+                            >
+                                Clear
+                            </Button>
+                        </div>
+                    </Popover.Panel>
+                </>
+            )}
+        </Popover>
+    );
+};
 
 interface Task {
     id: number;
@@ -419,9 +503,16 @@ export default function Tasks() {
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Basic client-side validation: ensure client and description
-        if (!newTaskForm.description.trim()) return;
-        if (!newTaskForm.client_id) return;
+        const missingFields: string[] = [];
+        if (!newTaskForm.title.trim()) missingFields.push('Title');
+        if (!newTaskForm.description.trim()) missingFields.push('Description');
+        if (!newTaskForm.client_id) missingFields.push('Client');
+        if (!newTaskForm.due_date) missingFields.push('Due date');
+
+        if (missingFields.length > 0) {
+            setDeleteMessage(`Please fill in: ${missingFields.join(', ')}.`);
+            return;
+        }
 
         const payload = {
             ...newTaskForm,
@@ -496,8 +587,16 @@ export default function Tasks() {
         e.preventDefault();
         if (!editTaskForm) return;
 
-        // basic validation
-        if (!editTaskForm.description?.trim()) return;
+        const missingFields: string[] = [];
+        if (!editTaskForm.title?.trim()) missingFields.push('Title');
+        if (!editTaskForm.description?.trim()) missingFields.push('Description');
+        if (!editTaskForm.client_id) missingFields.push('Client');
+        if (!editTaskForm.due_date) missingFields.push('Due date');
+
+        if (missingFields.length > 0) {
+            setDeleteMessage(`Please fill in: ${missingFields.join(', ')}.`);
+            return;
+        }
 
         const payload: any = {
             title: editTaskForm.title,
@@ -761,13 +860,12 @@ export default function Tasks() {
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium">Due Date</label>
-                                    <Input
-                                        type="date"
+                                    <DatePicker
                                         value={newTaskForm.due_date}
-                                        onChange={(e) =>
+                                        onChange={(value) =>
                                             setNewTaskForm({
                                                 ...newTaskForm,
-                                                due_date: e.target.value,
+                                                due_date: value,
                                             })
                                         }
                                     />
@@ -890,10 +988,9 @@ export default function Tasks() {
 
                                     <div>
                                         <label className="text-sm font-medium">Due Date</label>
-                                        <Input
-                                            type="date"
+                                        <DatePicker
                                             value={editTaskForm.due_date}
-                                            onChange={(e) => setEditTaskForm({ ...editTaskForm, due_date: e.target.value })}
+                                            onChange={(value) => setEditTaskForm({ ...editTaskForm, due_date: value })}
                                         />
                                     </div>
 
