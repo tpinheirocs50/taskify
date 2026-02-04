@@ -90,6 +90,7 @@ export default function Clients({ clients: clientsList }: Props) {
   const [company, setCompany] = useState('');
   const [phone, setPhone] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [createErrors, setCreateErrors] = useState<Record<string, string[]>>({});
 
   // Delete dialog
   const [deleteClientId, setDeleteClientId] = useState<number | null>(null);
@@ -254,7 +255,18 @@ export default function Clients({ clients: clientsList }: Props) {
   };
 
   const handleCreateClient = async () => {
+    const nextErrors: Record<string, string[]> = {};
+    if (!name.trim()) nextErrors.name = ['O nome é obrigatório.'];
+    if (!tin.trim()) nextErrors.tin = ['O TIN é obrigatório.'];
+    if (!address.trim()) nextErrors.address = ['O endereço é obrigatório.'];
+    if (!email.trim()) nextErrors.email = ['O email é obrigatório.'];
+    if (Object.keys(nextErrors).length > 0) {
+      setCreateErrors(nextErrors);
+      return;
+    }
+
     setIsCreating(true);
+    setCreateErrors({});
     try {
       const response = await fetch('/api/clients', {
         method: 'POST',
@@ -289,9 +301,14 @@ export default function Clients({ clients: clientsList }: Props) {
         setCompany('');
         setPhone('');
         setIsActive(true);
+        setCreateErrors({});
         await fetchClients();
       } else {
-        setAlertMessage(data.message || 'Failed to create client');
+        if (response.status === 422 && data.errors) {
+          setCreateErrors(data.errors);
+        } else {
+          setAlertMessage(data.message || 'Failed to create client');
+        }
       }
     } catch (error) {
       console.error('Create client error:', error);
@@ -394,7 +411,19 @@ export default function Clients({ clients: clientsList }: Props) {
             <p className="text-muted-foreground mt-1">Manage your client relationships</p>
           </div>
 
-          <Dialog open={isCreateOpen} onOpenChange={(open) => setIsCreateOpen(open)}>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => {
+            setIsCreateOpen(open);
+            if (open) {
+              setCreateErrors({});
+              setName('');
+              setTin('');
+              setAddress('');
+              setEmail('');
+              setCompany('');
+              setPhone('');
+              setIsActive(true);
+            }
+          }}>
             <DialogTrigger asChild>
               <Button>Add Client</Button>
             </DialogTrigger>
@@ -408,31 +437,49 @@ export default function Clients({ clients: clientsList }: Props) {
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="client-name">Name</Label>
-                    <Input id="client-name" value={name} onChange={(e) => setName(e.target.value)} />
+                    <Input id="client-name" value={name} onChange={(e) => setName(e.target.value)} required autoComplete="off" />
+                    {createErrors.name && (
+                      <p className="text-sm text-destructive">{createErrors.name[0]}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="client-tin">TIN</Label>
-                    <Input id="client-tin" value={tin} onChange={(e) => setTin(e.target.value)} />
+                    <Input id="client-tin" value={tin} onChange={(e) => setTin(e.target.value)} required autoComplete="off" />
+                    {createErrors.tin && (
+                      <p className="text-sm text-destructive">{createErrors.tin[0]}</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="client-address">Address</Label>
-                  <Textarea id="client-address" value={address} onChange={(e) => setAddress(e.target.value)} rows={3} />
+                  <Textarea id="client-address" value={address} onChange={(e) => setAddress(e.target.value)} rows={3} required autoComplete="off" />
+                  {createErrors.address && (
+                    <p className="text-sm text-destructive">{createErrors.address[0]}</p>
+                  )}
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="client-email">Email</Label>
-                    <Input id="client-email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                    <Input id="client-email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" />
+                    {createErrors.email && (
+                      <p className="text-sm text-destructive">{createErrors.email[0]}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="client-company">Company</Label>
-                    <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} />
+                    <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="off" />
+                    {createErrors.company && (
+                      <p className="text-sm text-destructive">{createErrors.company[0]}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="client-phone">Phone</Label>
-                    <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                    <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
+                    {createErrors.phone && (
+                      <p className="text-sm text-destructive">{createErrors.phone[0]}</p>
+                    )}
                   </div>
                 </div>
 
