@@ -398,8 +398,8 @@ export default function Clients({ clients: clientsList }: Props) {
       <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-6">
         <div className="flex justify-between items-center mb-2">
           <div>
-            <h1 className="text-2xl font-bold text-card-foreground">Clients</h1>
-            <p className="text-muted-foreground mt-1">Manage your client relationships</p>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Clients</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Manage your client relationships</p>
           </div>
 
           <Dialog open={isCreateOpen} onOpenChange={(open) => {
@@ -522,7 +522,7 @@ export default function Clients({ clients: clientsList }: Props) {
               <div key={client.id} onClick={() => openEditClient(client)} className={`bg-card text-card-foreground shadow-sm border border-border rounded-lg p-6 ${!client.isActive ? 'opacity-60' : ''} cursor-pointer hover:shadow-md transition-shadow`}>
                 <div className="flex items-start gap-4 mb-4">
                   <div className="flex min-w-0 flex-1 items-center gap-4">
-                    <div className={`w-12 h-12 ${getAvatarColor(client.id)} rounded-full flex items-center justify-center text-card-foreground font-bold text-sm`}>{getInitials(client.name)}</div>
+                    <div className={`w-12 h-12 shrink-0 ${getAvatarColor(client.id)} rounded-full flex items-center justify-center text-card-foreground font-bold text-sm`}>{getInitials(client.name)}</div>
                     <div className="min-w-0">
                       <h3 className="text-lg font-semibold text-card-foreground truncate">{client.name}</h3>
                       <p className="text-sm text-muted-foreground truncate">{client.company}</p>

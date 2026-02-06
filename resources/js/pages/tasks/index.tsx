@@ -205,6 +205,8 @@ export default function Tasks() {
         last_page: 1,
     });
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
     // Read appearance color theme (controls --primary CSS variable)
     const { colorTheme } = useAppearance();
 
@@ -329,7 +331,12 @@ export default function Tasks() {
                 try {
                     const res = await fetch(`/api/tasks/${task.id}`, {
                         method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            Accept: 'application/json',
+                        },
+                        credentials: 'same-origin',
                         body: JSON.stringify(payload),
                     });
                     const data = await res.json();
@@ -365,7 +372,12 @@ export default function Tasks() {
         try {
             const res = await fetch(`/api/tasks/${task.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
             const data = await res.json();
@@ -397,7 +409,12 @@ export default function Tasks() {
         try {
             const res = await fetch(`/api/tasks/${pendingUnarchiveTask.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
             const data = await res.json();
