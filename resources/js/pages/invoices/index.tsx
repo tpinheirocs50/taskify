@@ -91,6 +91,7 @@ interface Task {
     user_name?: string;
     client_name?: string;
     client_company?: string;
+    is_hidden?: boolean;
 }
 
 interface InvoiceStats {
@@ -129,6 +130,8 @@ export default function Invoices() {
         cancelled: 0,
     });
     const [loading, setLoading] = useState(true);
+    const [invoiceCurrentPage, setInvoiceCurrentPage] = useState(1);
+    const invoiceItemsPerPage = 10;
     const [pagination, setPagination] = useState({
         total: 0,
         per_page: 15,
@@ -136,6 +139,7 @@ export default function Invoices() {
         last_page: 1,
     });
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [allTasks, setAllTasks] = useState<Task[]>([]);
     const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
     const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([]);
     const [isCreating, setIsCreating] = useState(false);
@@ -201,7 +205,7 @@ export default function Invoices() {
             } while (currentPage <= lastPage);
 
             const tasks = allTasks.filter(
-                (task) => task.invoice_id === invoiceId && task.status === 'completed'
+                (task) => task.invoice_id === invoiceId
             );
             setInvoiceTasks(tasks);
         } catch (error) {
@@ -233,7 +237,8 @@ export default function Invoices() {
             const userAvailableTasks = allTasks.filter(
                 (task) => task.user_id === currentUserId &&
                     task.invoice_id === null &&
-                    task.status === 'completed'
+                    task.status === 'completed' &&
+                    !task.is_hidden
             );
 
             setAvailableTasks(userAvailableTasks);
@@ -268,6 +273,9 @@ export default function Invoices() {
                     .filter((task) => task.user_id === currentUserId && task.invoice_id !== null)
                     .map((task) => task.invoice_id)
             );
+
+            // Store all tasks for filtering
+            setAllTasks(allTasks);
 
             // Now fetch all invoices (handle pagination)
             let allInvoices: Invoice[] = [];
@@ -409,8 +417,19 @@ export default function Invoices() {
         ]);
     };
 
+    const areAllTasksCompleted = () => {
+        return invoiceTasks.length > 0 && invoiceTasks.every((task) => task.status === 'completed');
+    };
+
     const handleUpdateInvoice = async () => {
         if (!editingInvoice) return;
+
+        // Check if trying to set to restricted status without all tasks completed
+        const restrictedStatuses = ['paid', 'sent', 'overdue'];
+        if (restrictedStatuses.includes(editStatus) && !areAllTasksCompleted()) {
+            setAlertMessage('All tasks must be completed before setting invoice status to Paid, Sent, or Overdue.');
+            return;
+        }
 
         setIsUpdating(true);
         try {
@@ -578,10 +597,25 @@ export default function Invoices() {
         if (!query) {
             return matchesStatus;
         }
-        const matchesQuery =
+
+        // Search in invoice fields
+        const invoiceMatches =
             invoice.id.toString().includes(query) ||
-            invoice.status.toLowerCase().includes(query);
-        return matchesStatus && matchesQuery;
+            invoice.status.toLowerCase().includes(query) ||
+            (invoice.description && invoice.description.toLowerCase().includes(query));
+
+        // Search in associated tasks
+        const taskMatches = allTasks.some((task) => {
+            if (task.invoice_id !== invoice.id) return false;
+            return (
+                task.title.toLowerCase().includes(query) ||
+                (task.description && task.description.toLowerCase().includes(query)) ||
+                (task.client_name && task.client_name.toLowerCase().includes(query)) ||
+                (task.client_company && task.client_company.toLowerCase().includes(query))
+            );
+        });
+
+        return matchesStatus && (invoiceMatches || taskMatches);
     });
 
     const sortedInvoices = [...filteredInvoices].sort((a, b) => {
@@ -664,7 +698,7 @@ export default function Invoices() {
                             <div className="py-4">
                                 {availableTasks.length === 0 ? (
                                     <div className="text-center py-8 text-muted-foreground">
-                                        No available tasks. All your tasks are already assigned to invoices.
+                                        No available tasks.
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -856,7 +890,7 @@ export default function Invoices() {
                         </div>
                         <div className="grid gap-3 md:grid-cols-4">
                             <Input
-                                placeholder="Search by ID or status"
+                                placeholder="Search by invoice ID, status, description, client, or task"
                                 value={searchQuery}
                                 onChange={(event) =>
                                     setSearchQuery(event.target.value)
@@ -954,80 +988,135 @@ export default function Invoices() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {sortedInvoices.map((invoice) => {
-                                        const taxRate = Number(invoice.tax_rate) || 0;
-                                        const subtotal = invoice.total || 0;
-                                        const taxAmount = subtotal * taxRate / 100;
+                                    {(() => {
+                                        const startIndex = (invoiceCurrentPage - 1) * invoiceItemsPerPage;
+                                        const endIndex = startIndex + invoiceItemsPerPage;
+                                        const paginatedInvoices = sortedInvoices.slice(startIndex, endIndex);
 
-                                        return (
-                                            <TableRow key={invoice.id}>
-                                                <TableCell className="font-medium">
-                                                    #{invoice.id}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {new Date(
-                                                        invoice.date,
-                                                    ).toLocaleDateString('pt-PT')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {invoice.due_date
-                                                        ? new Date(invoice.due_date).toLocaleDateString('pt-PT')
-                                                        : '-'
-                                                    }
-                                                </TableCell>
-                                                <TableCell>
-                                                    <span
-                                                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(invoice.status)}`}
-                                                    >
-                                                        {invoice.status.charAt(0).toUpperCase() +
-                                                            invoice.status.slice(1)}
-                                                    </span>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {subtotal.toFixed(2)} €
-                                                </TableCell>
-                                                <TableCell className="text-right text-muted-foreground">
-                                                    {taxRate}% ({taxAmount.toFixed(2)} €)
-                                                </TableCell>
-                                                <TableCell className="text-right font-medium">
-                                                    {(invoice.totalMinusTax || 0).toFixed(2)} €
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            onClick={() => handleEditInvoice(invoice)}
-                                                            className="h-8 text-primary hover:text-primary/90 hover:bg-primary/10"
+                                        return paginatedInvoices.map((invoice) => {
+                                            const taxRate = Number(invoice.tax_rate) || 0;
+                                            const subtotal = invoice.total || 0;
+                                            const taxAmount = subtotal * taxRate / 100;
+
+                                            return (
+                                                <TableRow key={invoice.id}>
+                                                    <TableCell className="font-medium">
+                                                        #{invoice.id}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {new Date(
+                                                            invoice.date,
+                                                        ).toLocaleDateString('pt-PT')}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {invoice.due_date
+                                                            ? new Date(invoice.due_date).toLocaleDateString('pt-PT')
+                                                            : '-'
+                                                        }
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span
+                                                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadge(invoice.status)}`}
                                                         >
-                                                            Edit
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            onClick={() => setDeleteInvoiceId(invoice.id)}
-                                                            className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                                                        >
-                                                            Delete
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
+                                                            {invoice.status.charAt(0).toUpperCase() +
+                                                                invoice.status.slice(1)}
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {subtotal.toFixed(2)} €
+                                                    </TableCell>
+                                                    <TableCell className="text-right text-muted-foreground">
+                                                        {taxRate}% ({taxAmount.toFixed(2)} €)
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-medium">
+                                                        {(invoice.totalMinusTax || 0).toFixed(2)} €
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={() => handleEditInvoice(invoice)}
+                                                                className="h-8 text-primary hover:text-primary/90 hover:bg-primary/10"
+                                                            >
+                                                                Edit
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={() => setDeleteInvoiceId(invoice.id)}
+                                                                className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                                                            >
+                                                                Delete
+                                                            </Button>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        });
+                                    })()}
                                 </TableBody>
                             </Table>
                         )}
                     </CardContent>
                 </Card>
 
-                {/* Pagination Info */}
+                {/* Pagination Info and Controls */}
                 {!loading && invoices_list.length > 0 && (
-                    <div className="text-muted-foreground flex items-center justify-between text-sm">
-                        <span>
-                            Showing {sortedInvoices.length} of {invoices_list.length}{' '}
-                            invoices
-                        </span>
+                    <div className="flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">
+                            {(() => {
+                                const startIndex = (invoiceCurrentPage - 1) * invoiceItemsPerPage + 1;
+                                const endIndex = Math.min(invoiceCurrentPage * invoiceItemsPerPage, sortedInvoices.length);
+                                return `Showing ${sortedInvoices.length > 0 ? startIndex : 0} to ${endIndex} of ${sortedInvoices.length} invoices`;
+                            })()}
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setInvoiceCurrentPage(Math.max(1, invoiceCurrentPage - 1))}
+                                disabled={invoiceCurrentPage === 1}
+                                className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                            >
+                                Previous
+                            </button>
+                            <div className="flex items-center gap-2">
+                                {(() => {
+                                    const totalPages = Math.ceil(sortedInvoices.length / invoiceItemsPerPage);
+                                    const pages = [];
+                                    const maxPages = 5;
+                                    let startPage = Math.max(1, invoiceCurrentPage - Math.floor(maxPages / 2));
+                                    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+                                    if (endPage - startPage < maxPages - 1) {
+                                        startPage = Math.max(1, endPage - maxPages + 1);
+                                    }
+                                    for (let i = startPage; i <= endPage; i++) {
+                                        pages.push(i);
+                                    }
+                                    return pages.map((page) => (
+                                        <button
+                                            key={page}
+                                            onClick={() => setInvoiceCurrentPage(page)}
+                                            className={`inline-flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium ring-offset-background transition-colors ${invoiceCurrentPage === page
+                                                ? 'border-primary bg-primary text-primary-foreground'
+                                                : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+                                                }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    ));
+                                })()}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const totalPages = Math.ceil(sortedInvoices.length / invoiceItemsPerPage);
+                                    setInvoiceCurrentPage(Math.min(totalPages, invoiceCurrentPage + 1));
+                                }}
+                                disabled={invoiceCurrentPage >= Math.ceil(sortedInvoices.length / invoiceItemsPerPage)}
+                                className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                            >
+                                Next
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -1097,12 +1186,23 @@ export default function Invoices() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="draft">Draft</SelectItem>
-                                        <SelectItem value="sent">Sent</SelectItem>
-                                        <SelectItem value="paid">Paid</SelectItem>
-                                        <SelectItem value="overdue">Overdue</SelectItem>
                                         <SelectItem value="cancelled">Cancelled</SelectItem>
+                                        <SelectItem value="sent" disabled={!areAllTasksCompleted()}>
+                                            Sent {!areAllTasksCompleted() && '(All tasks must be completed)'}
+                                        </SelectItem>
+                                        <SelectItem value="paid" disabled={!areAllTasksCompleted()}>
+                                            Paid {!areAllTasksCompleted() && '(All tasks must be completed)'}
+                                        </SelectItem>
+                                        <SelectItem value="overdue" disabled={!areAllTasksCompleted()}>
+                                            Overdue {!areAllTasksCompleted() && '(All tasks must be completed)'}
+                                        </SelectItem>
                                     </SelectContent>
                                 </Select>
+                                {!areAllTasksCompleted() && invoiceTasks.length > 0 && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                                        All tasks must be completed to set status to Paid, Sent, or Overdue
+                                    </p>
+                                )}
                             </div>
 
                             {/* Current Tasks */}
@@ -1114,33 +1214,57 @@ export default function Invoices() {
                                     </div>
                                 ) : (
                                     <div className="space-y-2 border rounded-lg p-4 max-h-48 overflow-y-auto">
-                                        {invoiceTasks.map((task) => (
-                                            <div
-                                                key={task.id}
-                                                className="flex items-start justify-between gap-3 p-3 rounded-lg border bg-accent/30"
-                                            >
-                                                <div className="flex-1 space-y-1">
-                                                    <div className="font-medium">{task.title}</div>
-                                                    <div className="text-sm text-muted-foreground">
-                                                        {task.client_company && (
-                                                            <span>{task.client_company} • </span>
-                                                        )}
-                                                        <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
-                                                        {task.amount && (
-                                                            <span> • {Number(task.amount).toFixed(2)} €</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleRemoveTaskFromInvoice(task.id)}
-                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                                        {invoiceTasks.map((task) => {
+                                            const getStatusColor = (status: string) => {
+                                                switch (status) {
+                                                    case 'completed':
+                                                        return 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200';
+                                                    case 'in_progress':
+                                                        return 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200';
+                                                    case 'pending':
+                                                        return 'bg-amber-100 text-amber-800 dark:bg-amber-800 dark:text-amber-200';
+                                                    default:
+                                                        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
+                                                }
+                                            };
+                                            return (
+                                                <div
+                                                    key={task.id}
+                                                    className="flex items-start justify-between gap-3 p-3 rounded-lg border bg-accent/30"
                                                 >
-                                                    Remove
-                                                </Button>
-                                            </div>
-                                        ))}
+                                                    <div className="flex-1 space-y-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="font-medium">{task.title}</span>
+                                                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${getStatusColor(task.status)}`}>
+                                                                {task.status.replace('_', ' ')}
+                                                            </span>
+                                                            {task.is_hidden && (
+                                                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                                                                    Archived
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {task.client_company && (
+                                                                <span>{task.client_company} • </span>
+                                                            )}
+                                                            <span>Due: {new Date(task.due_date).toLocaleDateString('pt-PT')}</span>
+                                                            {task.amount && (
+                                                                <span> • {Number(task.amount).toFixed(2)} €</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleRemoveTaskFromInvoice(task.id)}
+                                                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                                 <div className="text-sm text-muted-foreground">
