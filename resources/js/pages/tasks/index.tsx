@@ -103,6 +103,9 @@ export default function Tasks() {
     const [originalEditTaskForm, setOriginalEditTaskForm] = useState<any>(null);
     const [isPendingArchive, setIsPendingArchive] = useState(false);
     const dragEndTimeRef = useRef<number>(0);
+    const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+    const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
+    const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null);
     const editDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
     const createDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -1337,8 +1340,16 @@ export default function Tasks() {
                                 </div>
 
                                 <div
-                                    onDragOver={(e) => e.preventDefault()}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                    }}
                                     onDrop={(e: React.DragEvent<HTMLDivElement>) => {
+                                        e.preventDefault();
+                                        setDraggedTaskId(null);
+                                        setDragOverTaskId(null);
+                                        setDragOverPosition(null);
+
                                         const idStr = e.dataTransfer.getData('text/plain');
                                         if (!idStr) return;
                                         const id = Number(idStr);
@@ -1379,16 +1390,43 @@ export default function Tasks() {
                                                 initial={{ opacity: 0, y: 12 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 transition={{ duration: 0.3, delay: index * 0.03 }}
-                                                className="cursor-grab active:cursor-grabbing select-none"
+                                                className="cursor-grab active:cursor-grabbing select-none relative"
                                             >
+                                                {dragOverTaskId === task.id && dragOverPosition === 'before' && (
+                                                    <div className="absolute -top-1 left-0 right-0 h-0.5 bg-primary rounded-full z-10" />
+                                                )}
                                                 <div
                                                     draggable
                                                     onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
                                                         e.dataTransfer.setData('text/plain', String(task.id));
                                                         e.dataTransfer.effectAllowed = 'move';
+                                                        setDraggedTaskId(task.id);
                                                     }}
                                                     onDragEnd={() => {
                                                         dragEndTimeRef.current = Date.now();
+                                                        setDraggedTaskId(null);
+                                                        setDragOverTaskId(null);
+                                                        setDragOverPosition(null);
+                                                    }}
+                                                    onDragOver={(e: React.DragEvent<HTMLDivElement>) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        if (draggedTaskId === task.id) return;
+                                                        
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        const midpoint = rect.top + rect.height / 2;
+                                                        const position = e.clientY < midpoint ? 'before' : 'after';
+                                                        
+                                                        setDragOverTaskId(task.id);
+                                                        setDragOverPosition(position);
+                                                    }}
+                                                    onDragLeave={(e: React.DragEvent<HTMLDivElement>) => {
+                                                        e.preventDefault();
+                                                        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                                                        if (dragOverTaskId === task.id) {
+                                                            setDragOverTaskId(null);
+                                                            setDragOverPosition(null);
+                                                        }
                                                     }}
                                                     onClick={() => {
                                                         const timeSinceDrag = Date.now() - dragEndTimeRef.current;
@@ -1425,6 +1463,9 @@ export default function Tasks() {
                                                         </CardContent>
                                                     </Card>
                                                 </div>
+                                                {dragOverTaskId === task.id && dragOverPosition === 'after' && (
+                                                    <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full z-10" />
+                                                )}
                                             </motion.div>
                                         ))}
                                 </div>
