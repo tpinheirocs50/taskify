@@ -64,6 +64,7 @@ interface Task {
     user_name: string;
     client_name: string;
     client_company: string | null;
+    is_hidden?: boolean;
     created_at: string;
 }
 
@@ -495,7 +496,7 @@ export default function Dashboard() {
                                 now.setHours(0, 0, 0, 0);
 
                                 const allNonCompletedTasks = tasks.filter(
-                                    (task) => task.status !== 'completed',
+                                    (task) => task.status !== 'completed' && !task.is_hidden,
                                 );
 
                                 const overdueTasks = allNonCompletedTasks.filter(
@@ -679,6 +680,7 @@ export default function Dashboard() {
                                             <SelectItem value="pending">Pending</SelectItem>
                                             <SelectItem value="in_progress">In Progress</SelectItem>
                                             <SelectItem value="completed">Completed</SelectItem>
+                                            <SelectItem value="archived">Archived</SelectItem>
                                         </SelectContent>
                                     </Select>
 
@@ -765,11 +767,14 @@ export default function Dashboard() {
                                             let filteredTasks = tasks.filter((task) => {
                                                 const statusMatch =
                                                     filterStatus === 'all' ||
-                                                    task.status === filterStatus;
+                                                    task.status === filterStatus ||
+                                                    (filterStatus === 'archived' && task.is_hidden);
                                                 const priorityMatch =
                                                     filterPriority === 'all' ||
                                                     task.priority === filterPriority;
-                                                return statusMatch && priorityMatch;
+                                                // Hide is_hidden tasks unless specifically filtering for archived
+                                                const hiddenMatch = filterStatus === 'archived' ? task.is_hidden : !task.is_hidden;
+                                                return statusMatch && priorityMatch && hiddenMatch;
                                             });
 
                                             // Apply sorting
@@ -885,11 +890,13 @@ export default function Dashboard() {
                                             const filteredTasksCount = tasks.filter((task) => {
                                                 const statusMatch =
                                                     filterStatus === 'all' ||
-                                                    task.status === filterStatus;
+                                                    task.status === filterStatus ||
+                                                    (filterStatus === 'archived' && task.is_hidden);
                                                 const priorityMatch =
                                                     filterPriority === 'all' ||
                                                     task.priority === filterPriority;
-                                                return statusMatch && priorityMatch;
+                                                const hiddenMatch = filterStatus === 'archived' ? task.is_hidden : !task.is_hidden;
+                                                return statusMatch && priorityMatch && hiddenMatch;
                                             }).length;
                                             const startIndex = (currentPage - 1) * itemsPerPage + 1;
                                             const endIndex = Math.min(currentPage * itemsPerPage, filteredTasksCount);
