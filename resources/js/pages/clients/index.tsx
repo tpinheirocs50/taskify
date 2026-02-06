@@ -115,6 +115,7 @@ export default function Clients({ clients: clientsList }: Props) {
   const [editCompany, setEditCompany] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [isUpdatingClient, setIsUpdatingClient] = useState(false);
+  const [editErrors, setEditErrors] = useState<Record<string, string[]>>({});
 
 
   // Pagination (server-side)
@@ -166,12 +167,26 @@ export default function Clients({ clients: clientsList }: Props) {
     setEditEmail(client.email);
     setEditCompany(client.company || '');
     setEditPhone(client.phone || '');
+    setEditErrors({});
     setIsEditOpen(true);
   };
 
   const handleUpdateClient = async () => {
     if (!editClient) return;
+    const nextErrors: Record<string, string[]> = {};
+    if (!editName.trim()) nextErrors.name = ['Name is required.'];
+    if (!editTin.trim()) nextErrors.tin = ['TIN is required.'];
+    if (!editAddress.trim()) nextErrors.address = ['Address is required.'];
+    if (!editEmail.trim()) nextErrors.email = ['Email is required.'];
+    if (!editCompany.trim()) nextErrors.company = ['Company is required.'];
+    if (!editPhone.trim()) nextErrors.phone = ['Phone is required.'];
+    if (Object.keys(nextErrors).length > 0) {
+      setEditErrors(nextErrors);
+      return;
+    }
+
     setIsUpdatingClient(true);
+    setEditErrors({});
 
     try {
       const response = await fetch(`/api/clients/${editClient.id}`, {
@@ -199,7 +214,11 @@ export default function Clients({ clients: clientsList }: Props) {
         setEditClient(null);
         await fetchClients(currentPage, statusFilter);
       } else {
-        setAlertMessage(data.message || 'Failed to update client');
+        if (response.status === 422 && data.errors) {
+          setEditErrors(data.errors);
+        } else {
+          setAlertMessage(data.message || 'Failed to update client');
+        }
       }
     } catch (error) {
       console.error('Update client error:', error);
@@ -211,10 +230,12 @@ export default function Clients({ clients: clientsList }: Props) {
 
   const handleCreateClient = async () => {
     const nextErrors: Record<string, string[]> = {};
-    if (!name.trim()) nextErrors.name = ['O nome é obrigatório.'];
-    if (!tin.trim()) nextErrors.tin = ['O TIN é obrigatório.'];
-    if (!address.trim()) nextErrors.address = ['O endereço é obrigatório.'];
-    if (!email.trim()) nextErrors.email = ['O email é obrigatório.'];
+    if (!name.trim()) nextErrors.name = ['Name is required.'];
+    if (!tin.trim()) nextErrors.tin = ['TIN is required.'];
+    if (!address.trim()) nextErrors.address = ['Address is required.'];
+    if (!email.trim()) nextErrors.email = ['Email is required.'];
+    if (!company.trim()) nextErrors.company = ['Company is required.'];
+    if (!phone.trim()) nextErrors.phone = ['Phone is required.'];
     if (Object.keys(nextErrors).length > 0) {
       setCreateErrors(nextErrors);
       return;
@@ -456,14 +477,14 @@ export default function Clients({ clients: clientsList }: Props) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="client-company">Company</Label>
-                  <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} autoComplete="off" />
+                  <Input id="client-company" value={company} onChange={(e) => setCompany(e.target.value)} required autoComplete="off" />
                   {createErrors.company && (
                     <p className="text-sm text-destructive">{createErrors.company[0]}</p>
                   )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="client-phone">Phone</Label>
-                  <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
+                  <Input id="client-phone" value={phone} onChange={(e) => setPhone(e.target.value)} required autoComplete="off" />
                   {createErrors.phone && (
                     <p className="text-sm text-destructive">{createErrors.phone[0]}</p>
                   )}
@@ -649,28 +670,46 @@ export default function Clients({ clients: clientsList }: Props) {
               <div className="space-y-2">
                 <Label htmlFor="edit-client-name">Name</Label>
                 <Input id="edit-client-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                {editErrors.name && (
+                  <p className="text-sm text-destructive">{editErrors.name[0]}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-client-tin">TIN</Label>
                 <Input id="edit-client-tin" value={editTin} onChange={(e) => setEditTin(e.target.value)} />
+                {editErrors.tin && (
+                  <p className="text-sm text-destructive">{editErrors.tin[0]}</p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="edit-client-address">Address</Label>
                 <Textarea id="edit-client-address" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} rows={3} />
+                {editErrors.address && (
+                  <p className="text-sm text-destructive">{editErrors.address[0]}</p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="edit-client-email">Email</Label>
                 <Input id="edit-client-email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                {editErrors.email && (
+                  <p className="text-sm text-destructive">{editErrors.email[0]}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-client-company">Company</Label>
-                <Input id="edit-client-company" value={editCompany} onChange={(e) => setEditCompany(e.target.value)} />
+                <Input id="edit-client-company" value={editCompany} onChange={(e) => setEditCompany(e.target.value)} required />
+                {editErrors.company && (
+                  <p className="text-sm text-destructive">{editErrors.company[0]}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-client-phone">Phone</Label>
-                <Input id="edit-client-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+                <Input id="edit-client-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required />
+                {editErrors.phone && (
+                  <p className="text-sm text-destructive">{editErrors.phone[0]}</p>
+                )}
               </div>
 
 
