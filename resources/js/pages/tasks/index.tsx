@@ -205,6 +205,8 @@ export default function Tasks() {
         last_page: 1,
     });
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
     // Read appearance color theme (controls --primary CSS variable)
     const { colorTheme } = useAppearance();
 
@@ -262,7 +264,14 @@ export default function Tasks() {
         });
 
         try {
-            const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/tasks/${task.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
+            });
             const data = await res.json();
 
             if (!res.ok || !data.success) {
@@ -322,7 +331,12 @@ export default function Tasks() {
                 try {
                     const res = await fetch(`/api/tasks/${task.id}`, {
                         method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            Accept: 'application/json',
+                        },
+                        credentials: 'same-origin',
                         body: JSON.stringify(payload),
                     });
                     const data = await res.json();
@@ -358,7 +372,12 @@ export default function Tasks() {
         try {
             const res = await fetch(`/api/tasks/${task.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
             const data = await res.json();
@@ -390,7 +409,12 @@ export default function Tasks() {
         try {
             const res = await fetch(`/api/tasks/${pendingUnarchiveTask.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
             const data = await res.json();
@@ -464,7 +488,12 @@ export default function Tasks() {
 
     const fetchClients = async () => {
         try {
-            const res = await fetch('/api/clients?page=1');
+            const res = await fetch('/api/clients?page=1', {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
             const data = await res.json();
             if (data.success) setClientsList(data.data);
         } catch (err) {
@@ -524,7 +553,12 @@ export default function Tasks() {
         try {
             const response = await fetch('/api/tasks', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
 
@@ -620,7 +654,12 @@ export default function Tasks() {
         try {
             const res = await fetch(`/api/tasks/${editTaskForm.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    Accept: 'application/json',
+                },
+                credentials: 'same-origin',
                 body: JSON.stringify(payload),
             });
             const data = await res.json();
@@ -1401,7 +1440,12 @@ export default function Tasks() {
                                         // Persist change
                                         fetch(`/api/tasks/${id}`, {
                                             method: 'PATCH',
-                                            headers: { 'Content-Type': 'application/json' },
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                                                Accept: 'application/json',
+                                            },
+                                            credentials: 'same-origin',
                                             body: JSON.stringify({ status: col.id }),
                                         }).then((res) => {
                                             if (!res.ok) fetchTasks();

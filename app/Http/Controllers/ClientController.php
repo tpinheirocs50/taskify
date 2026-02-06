@@ -11,11 +11,19 @@ class ClientController extends Controller
     /**
      * Display a listing of all clients.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
-            $clients = Client::orderBy('id', 'desc')
-                ->paginate(15);
+            $query = Client::where('user_id', $request->user()->id)
+                ->orderBy('id', 'desc');
+
+            if ($request->query('status') === 'inactive') {
+                $query->where('isActive', false);
+            } else {
+                $query->where('isActive', true);
+            }
+
+            $clients = $query->paginate(6);
 
             return response()->json([
                 'success' => true,
@@ -52,7 +60,10 @@ class ClientController extends Controller
                 'isActive' => 'sometimes|boolean',
             ]);
 
-            $client = Client::create($validated);
+            $client = Client::create([
+                ...$validated,
+                'user_id' => $request->user()->id,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -80,7 +91,8 @@ class ClientController extends Controller
     public function show(string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
+            $client = Client::where('user_id', $request->user()->id)
+                ->findOrFail($id);
 
             return response()->json([
                 'success' => true,
@@ -106,7 +118,8 @@ class ClientController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
+            $client = Client::where('user_id', $request->user()->id)
+                ->findOrFail($id);
 
             $validated = $request->validate([
                 'name' => 'sometimes|required|string|max:100',
@@ -151,12 +164,15 @@ class ClientController extends Controller
     public function destroy(string $id): JsonResponse
     {
         try {
-            $client = Client::findOrFail($id);
-            $client->delete();
+            $client = Client::where('user_id', request()->user()->id)
+                ->findOrFail($id);
+            $client->isActive = false;
+            $client->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Client deleted successfully',
+                'message' => 'Client deactivated successfully',
+                'data' => $client->fresh(),
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
