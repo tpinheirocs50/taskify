@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Plus, Search, Filter, Calendar, Flag, Archive, RotateCcw } from 'lucide-react';
-import { Popover } from '@headlessui/react';
-import { DayPicker } from 'react-day-picker';
-import { enUS } from 'date-fns/locale';
-import { format, parseISO } from 'date-fns';
 import {
     Dialog,
     DialogContent,
@@ -47,86 +43,6 @@ const breadcrumbs: BreadcrumbItem[] = [
         href: tasks().url,
     },
 ];
-
-type DatePickerProps = {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-};
-
-const DatePicker = ({ value, onChange, placeholder = 'Select date' }: DatePickerProps) => {
-    const selected = value ? parseISO(value) : undefined;
-
-    return (
-        <Popover className="relative">
-            {({ close }) => (
-                <>
-                    <Popover.Button className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground">
-                        <span className={value ? '' : 'text-muted-foreground'}>
-                            {value ? format(parseISO(value), 'yyyy-MM-dd') : placeholder}
-                        </span>
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                    </Popover.Button>
-                    <Popover.Panel className="absolute z-50 mt-2 rounded-lg border border-border bg-popover p-3 shadow-lg">
-                        <DayPicker
-                            mode="single"
-                            selected={selected}
-                            onSelect={(day) => {
-                                if (day) {
-                                    onChange(format(day, 'yyyy-MM-dd'));
-                                    close();
-                                }
-                            }}
-                            locale={enUS}
-                            showOutsideDays
-                            classNames={{
-                                months: 'flex flex-col',
-                                month: 'space-y-4',
-                                caption: 'flex items-center justify-between px-1',
-                                caption_label: 'text-sm font-medium',
-                                nav: 'flex items-center gap-1',
-                                nav_button: 'h-7 w-7 rounded-md border border-input bg-background text-foreground hover:bg-accent',
-                                table: 'w-full border-collapse space-y-1',
-                                head_row: 'flex',
-                                head_cell: 'w-9 text-[0.8rem] font-normal text-muted-foreground',
-                                row: 'flex w-full mt-1',
-                                cell: 'h-9 w-9 text-center text-sm p-0',
-                                day: 'h-9 w-9 rounded-md hover:bg-accent',
-                                day_selected: 'bg-primary text-primary-foreground hover:bg-primary',
-                                day_today: 'border border-primary',
-                                day_outside: 'text-muted-foreground opacity-50',
-                            }}
-                        />
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    onChange(format(new Date(), 'yyyy-MM-dd'));
-                                    close();
-                                }}
-                            >
-                                Today
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    onChange('');
-                                    close();
-                                }}
-                            >
-                                Clear
-                            </Button>
-                        </div>
-                    </Popover.Panel>
-                </>
-            )}
-        </Popover>
-    );
-};
 
 interface Task {
     id: number;
@@ -187,6 +103,9 @@ export default function Tasks() {
     const [originalEditTaskForm, setOriginalEditTaskForm] = useState<any>(null);
     const [isPendingArchive, setIsPendingArchive] = useState(false);
     const dragEndTimeRef = useRef<number>(0);
+    const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+    const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
+    const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null);
     const editDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
     const createDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -899,12 +818,13 @@ export default function Tasks() {
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium">Due Date</label>
-                                    <DatePicker
+                                    <Input
+                                        type="date"
                                         value={newTaskForm.due_date}
-                                        onChange={(value) =>
+                                        onChange={(e) =>
                                             setNewTaskForm({
                                                 ...newTaskForm,
-                                                due_date: value,
+                                                due_date: e.target.value,
                                             })
                                         }
                                     />
@@ -1027,9 +947,10 @@ export default function Tasks() {
 
                                     <div>
                                         <label className="text-sm font-medium">Due Date</label>
-                                        <DatePicker
+                                        <Input
+                                            type="date"
                                             value={editTaskForm.due_date}
-                                            onChange={(value) => setEditTaskForm({ ...editTaskForm, due_date: value })}
+                                            onChange={(e) => setEditTaskForm({ ...editTaskForm, due_date: e.target.value })}
                                         />
                                     </div>
 
@@ -1271,7 +1192,7 @@ export default function Tasks() {
                                 <SelectValue placeholder="Filter by status" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All statuses</SelectItem>
+                                <SelectItem value="all">Any status</SelectItem>
                                 <SelectItem value="pending">Pending</SelectItem>
                                 <SelectItem value="in_progress">In Progress</SelectItem>
                                 <SelectItem value="completed">Completed</SelectItem>
@@ -1419,8 +1340,16 @@ export default function Tasks() {
                                 </div>
 
                                 <div
-                                    onDragOver={(e) => e.preventDefault()}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                    }}
                                     onDrop={(e: React.DragEvent<HTMLDivElement>) => {
+                                        e.preventDefault();
+                                        setDraggedTaskId(null);
+                                        setDragOverTaskId(null);
+                                        setDragOverPosition(null);
+
                                         const idStr = e.dataTransfer.getData('text/plain');
                                         if (!idStr) return;
                                         const id = Number(idStr);
@@ -1461,16 +1390,43 @@ export default function Tasks() {
                                                 initial={{ opacity: 0, y: 12 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 transition={{ duration: 0.3, delay: index * 0.03 }}
-                                                className="cursor-grab active:cursor-grabbing select-none"
+                                                className="cursor-grab active:cursor-grabbing select-none relative"
                                             >
+                                                {dragOverTaskId === task.id && dragOverPosition === 'before' && (
+                                                    <div className="absolute -top-1 left-0 right-0 h-0.5 bg-primary rounded-full z-10" />
+                                                )}
                                                 <div
                                                     draggable
                                                     onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
                                                         e.dataTransfer.setData('text/plain', String(task.id));
                                                         e.dataTransfer.effectAllowed = 'move';
+                                                        setDraggedTaskId(task.id);
                                                     }}
                                                     onDragEnd={() => {
                                                         dragEndTimeRef.current = Date.now();
+                                                        setDraggedTaskId(null);
+                                                        setDragOverTaskId(null);
+                                                        setDragOverPosition(null);
+                                                    }}
+                                                    onDragOver={(e: React.DragEvent<HTMLDivElement>) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        if (draggedTaskId === task.id) return;
+                                                        
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        const midpoint = rect.top + rect.height / 2;
+                                                        const position = e.clientY < midpoint ? 'before' : 'after';
+                                                        
+                                                        setDragOverTaskId(task.id);
+                                                        setDragOverPosition(position);
+                                                    }}
+                                                    onDragLeave={(e: React.DragEvent<HTMLDivElement>) => {
+                                                        e.preventDefault();
+                                                        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                                                        if (dragOverTaskId === task.id) {
+                                                            setDragOverTaskId(null);
+                                                            setDragOverPosition(null);
+                                                        }
                                                     }}
                                                     onClick={() => {
                                                         const timeSinceDrag = Date.now() - dragEndTimeRef.current;
@@ -1507,6 +1463,9 @@ export default function Tasks() {
                                                         </CardContent>
                                                     </Card>
                                                 </div>
+                                                {dragOverTaskId === task.id && dragOverPosition === 'after' && (
+                                                    <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full z-10" />
+                                                )}
                                             </motion.div>
                                         ))}
                                 </div>

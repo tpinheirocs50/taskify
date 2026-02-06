@@ -908,7 +908,7 @@ export default function Invoices() {
                                     <SelectValue placeholder="Filter by status" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All statuses</SelectItem>
+                                    <SelectItem value="all">Any status</SelectItem>
                                     <SelectItem value="draft">Draft</SelectItem>
                                     <SelectItem value="sent">Sent</SelectItem>
                                     <SelectItem value="paid">Paid</SelectItem>
